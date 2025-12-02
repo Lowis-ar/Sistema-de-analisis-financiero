@@ -1,6 +1,6 @@
 <?php
 // install.php - Ejecutar una sola vez
-echo "<h2>Instalación del Sistema Financiero (Con Módulo de Garantías Jurídicas)</h2>";
+echo "<h2>Instalación del Sistema Financiero </h2>";
 
 $host = 'localhost';
 $username = 'root';
@@ -15,6 +15,21 @@ try {
     // 2. Crear base de datos si no existe
     $conn->exec("CREATE DATABASE IF NOT EXISTS $dbname CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
     $conn->exec("USE $dbname");
+    
+    // ---------------------------------------------------------
+    // BLOQUE 0: TABLA USUARIOS 
+    // ---------------------------------------------------------
+    
+    // Crear tabla usuarios 
+    $conn->exec("CREATE TABLE IF NOT EXISTS usuarios (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        activo TINYINT(1) DEFAULT 1 COMMENT '1=activo, 0=inactivo',
+        rol VARCHAR(20) DEFAULT 'usuario' COMMENT 'admin, usuario',
+        fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB");
     
     // ---------------------------------------------------------
     // BLOQUE 1: TABLAS BASE (Existentes)
@@ -132,7 +147,7 @@ try {
         FOREIGN KEY (tipo_garantia_id) REFERENCES tipos_garantia(id)
     ) ENGINE=InnoDB");
 
-    // 2.4 Tabla Pivote: Préstamos <-> Garantías (Muchos a Muchos)
+    // 2.4 Tabla Pivote: Préstamos <-> Garantías (Many-to-Many)
     $conn->exec("CREATE TABLE IF NOT EXISTS prestamos_garantias (
         id INT AUTO_INCREMENT PRIMARY KEY,
         prestamo_id INT NOT NULL,
@@ -143,7 +158,7 @@ try {
         FOREIGN KEY (garantia_id) REFERENCES garantias(id)
     ) ENGINE=InnoDB");
 
-    // 2.5 Tabla Seguros de Garantía (Para alertas de vencimiento)
+    // 2.5 Tabla Seguros de Garantía
     $conn->exec("CREATE TABLE IF NOT EXISTS garantias_seguros (
         id INT AUTO_INCREMENT PRIMARY KEY,
         garantia_id INT NOT NULL,
@@ -172,7 +187,7 @@ try {
     // BLOQUE 3: INSERTAR DATOS POR DEFECTO
     // ---------------------------------------------------------
     
-    // Verificar si la tabla tipos_garantia está vacía para insertar defaults
+    // Verificar si la tabla tipos_garantia está vacía
     $stmt = $conn->query("SELECT COUNT(*) FROM tipos_garantia");
     if ($stmt->fetchColumn() == 0) {
         $sql = "INSERT INTO tipos_garantia (nombre, descripcion, requiere_rug) VALUES 
@@ -184,9 +199,39 @@ try {
         $conn->exec($sql);
         echo "<p style='color: blue;'>ℹ️ Catálogo de Tipos de Garantía inicializado.</p>";
     }
+    
+    // Verificar si la tabla usuarios está vacía para insertar usuario admin por defecto
+    $stmt = $conn->query("SELECT COUNT(*) FROM usuarios");
+    if ($stmt->fetchColumn() == 0) {
+        $admin_pass = password_hash('admin123', PASSWORD_DEFAULT);
+        $sql = "INSERT INTO usuarios (nombre, email, password, rol) VALUES 
+                ('Administrador', 'admin@financiera.com', '$admin_pass', 'admin'),
+                ('Usuario Demo', 'usuario@financiera.com', '$admin_pass', 'usuario')";
+        $conn->exec($sql);
+        echo "<p style='color: blue;'>ℹ️ Usuarios por defecto creados.</p>";
+        echo "<p style='color: orange;'>⚠️ Credenciales por defecto:</p>";
+        echo "<ul style='color: orange;'>";
+        echo "<li>Admin: admin@financiera.com / admin123</li>";
+        echo "<li>Usuario: usuario@financiera.com / admin123</li>";
+        echo "</ul>";
+    }
 
-    echo "<p style='color: green;'>✅ Base de datos, tablas base y módulo de garantías creados exitosamente!</p>";
-    echo "<p>Ahora puedes acceder al sistema en <a href='index.php'>index.php</a></p>";
+    echo "<p style='color: green;'>✅ Base de datos y todas las tablas creadas exitosamente!</p>";
+    echo "<p><strong>Tablas creadas:</strong></p>";
+    echo "<ul>";
+    echo "<li>✅ usuarios </li>";
+    echo "<li>✅ clientes</li>";
+    echo "<li>✅ prestamos</li>";
+    echo "<li>✅ pagos</li>";
+    echo "<li>✅ activos</li>";
+    echo "<li>✅ clientes_juridicos</li>";
+    echo "<li>✅ tipos_garantia</li>";
+    echo "<li>✅ garantias</li>";
+    echo "<li>✅ prestamos_garantias</li>";
+    echo "<li>✅ garantias_seguros</li>";
+    echo "<li>✅ garantias_avaluos</li>";
+    echo "</ul>";
+    echo "<p>Ahora puedes acceder al sistema en <a href='../login/login.php'>login.php</a></p>";
     
 } catch(PDOException $e) {
     echo "<p style='color: red;'>❌ Error: " . $e->getMessage() . "</p>";
