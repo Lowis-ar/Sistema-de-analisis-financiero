@@ -1,29 +1,6 @@
 <?php
 // install.php - Ejecutar una sola vez
-echo "<!DOCTYPE html>
-<html lang='es'>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>Instalación Sistema Financiero</title>
-    <style>
-        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        .success { background: #d4edda; color: #155724; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #28a745; }
-        .error { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #dc3545; }
-        .info { background: #d1ecf1; color: #0c5460; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #17a2b8; }
-        .warning { background: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #ffc107; }
-        h2 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-        .btn { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px; }
-        .btn:hover { background: #0056b3; }
-        .step { margin: 20px 0; padding: 10px; border-left: 3px solid #6c757d; }
-    </style>
-</head>
-<body>
-    <div class='container'>
-        <h2>🛠️ Instalación del Sistema Financiero</h2>
-        <p>Este script creará la base de datos y todas las tablas necesarias.</p>
-        <hr>";
+echo "<h2>Instalación del Sistema Financiero (Con Módulo de Garantías Jurídicas)</h2>";
 
 $host = 'localhost';
 $username = 'root';
@@ -31,40 +8,22 @@ $password = '';
 $dbname = 'financiera_sv';
 
 try {
-    echo "<div class='step'><strong>Paso 1:</strong> Conectando al servidor MySQL...</div>";
-    
-    // Conectar sin seleccionar base de datos
+    // 1. Conectar sin seleccionar base de datos
     $conn = new PDO("mysql:host=$host", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
-    echo "<div class='success'>✅ Conexión al servidor MySQL exitosa</div>";
-    
-    // Crear base de datos si no existe
-    echo "<div class='step'><strong>Paso 2:</strong> Creando/verificando base de datos '$dbname'...</div>";
-    $conn->exec("CREATE DATABASE IF NOT EXISTS $dbname CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+    // 2. Crear base de datos si no existe
+    $conn->exec("CREATE DATABASE IF NOT EXISTS $dbname CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
     $conn->exec("USE $dbname");
     
-    echo "<div class='success'>✅ Base de datos '$dbname' lista</div>";
-    
-    // =================== CREAR TABLA USUARIOS (IMPORTANTE PARA LOGIN) ===================
-    echo "<div class='step'><strong>Paso 3:</strong> Creando tabla de usuarios (para login)...</div>";
-    $conn->exec("CREATE TABLE IF NOT EXISTS usuarios (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        nombre VARCHAR(100) NOT NULL,
-        email VARCHAR(100) NOT NULL UNIQUE,
-        password VARCHAR(255) NOT NULL,
-        activo TINYINT(1) DEFAULT 1,
-        rol ENUM('admin', 'usuario') DEFAULT 'usuario',
-        fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-    
-    echo "<div class='success'>✅ Tabla 'usuarios' creada</div>";
-    
-    // =================== CREAR TABLA CLIENTES ===================
-    echo "<div class='step'><strong>Paso 4:</strong> Creando tabla de clientes...</div>";
+    // ---------------------------------------------------------
+    // BLOQUE 1: TABLAS BASE (Existentes)
+    // ---------------------------------------------------------
+
+    // Crear tabla clientes
     $conn->exec("CREATE TABLE IF NOT EXISTS clientes (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        tipo ENUM('natural', 'juridica') NOT NULL,
+        tipo VARCHAR(20) NOT NULL,
         nombre VARCHAR(255) NOT NULL,
         codigo VARCHAR(50) UNIQUE NOT NULL,
         dui VARCHAR(20),
@@ -73,18 +32,15 @@ try {
         egresos DECIMAL(15,2) DEFAULT 0,
         telefono VARCHAR(20),
         capacidad_pago DECIMAL(15,2) DEFAULT 0,
-        calificacion ENUM('A','B','C','D') DEFAULT 'A',
-        fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        calificacion VARCHAR(5) DEFAULT 'A',
+        fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB");
     
-    echo "<div class='success'>✅ Tabla 'clientes' creada</div>";
-    
-    // =================== CREAR TABLA PRÉSTAMOS ===================
-    echo "<div class='step'><strong>Paso 5:</strong> Creando tabla de préstamos...</div>";
+    // Crear tabla prestamos
     $conn->exec("CREATE TABLE IF NOT EXISTS prestamos (
         id INT AUTO_INCREMENT PRIMARY KEY,
         cliente_id INT NOT NULL,
-        tipo ENUM('personal', 'hipotecario', 'agricola', 'construccion', 'empresa') NOT NULL,
+        tipo VARCHAR(50) NOT NULL,
         monto DECIMAL(15,2) NOT NULL,
         plazo INT NOT NULL,
         tasa DECIMAL(5,2) NOT NULL,
@@ -93,118 +49,146 @@ try {
         cliente_nombre VARCHAR(255) NOT NULL,
         cuota DECIMAL(15,2) NOT NULL,
         saldo_actual DECIMAL(15,2) NOT NULL,
-        estado ENUM('normal', 'mora', 'incobrable', 'pagado') DEFAULT 'normal',
-        fecha_otorgamiento DATETIME DEFAULT CURRENT_TIMESTAMP,
+        estado VARCHAR(50) DEFAULT 'normal',
+        fecha_otorgamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         ultimo_pago DATETIME NULL,
         dias_mora INT DEFAULT 0,
-        FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+    ) ENGINE=InnoDB");
     
-    echo "<div class='success'>✅ Tabla 'prestamos' creada</div>";
-    
-    // =================== CREAR TABLA PAGOS ===================
-    echo "<div class='step'><strong>Paso 6:</strong> Creando tabla de pagos...</div>";
+    // Crear tabla pagos
     $conn->exec("CREATE TABLE IF NOT EXISTS pagos (
         id INT AUTO_INCREMENT PRIMARY KEY,
         prestamo_id INT NOT NULL,
         cliente_nombre VARCHAR(255) NOT NULL,
-        fecha DATETIME DEFAULT CURRENT_TIMESTAMP,
+        fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         total_pagado DECIMAL(15,2) NOT NULL,
         capital DECIMAL(15,2) NOT NULL,
         interes DECIMAL(15,2) NOT NULL,
         mora DECIMAL(15,2) DEFAULT 0,
         comision DECIMAL(15,2) DEFAULT 0,
         saldo_restante DECIMAL(15,2) NOT NULL,
-        FOREIGN KEY (prestamo_id) REFERENCES prestamos(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        FOREIGN KEY (prestamo_id) REFERENCES prestamos(id)
+    ) ENGINE=InnoDB");
     
-    echo "<div class='success'>✅ Tabla 'pagos' creada</div>";
-    
-    // =================== CREAR TABLA ACTIVOS ===================
-    echo "<div class='step'><strong>Paso 7:</strong> Creando tabla de activos fijos...</div>";
+    // Crear tabla activos (Bienes propios de la financiera)
     $conn->exec("CREATE TABLE IF NOT EXISTS activos (
         id INT AUTO_INCREMENT PRIMARY KEY,
         institucion VARCHAR(50) NOT NULL,
         unidad VARCHAR(50) NOT NULL,
-        tipo ENUM('edificaciones', 'maquinaria', 'vehiculos', 'otros') NOT NULL,
+        tipo VARCHAR(50) NOT NULL,
         descripcion TEXT NOT NULL,
         valor DECIMAL(15,2) NOT NULL,
         fecha_compra DATE NOT NULL,
         codigo VARCHAR(100) UNIQUE NOT NULL,
         vida_util INT NOT NULL,
         porcentaje_depreciacion DECIMAL(5,4) NOT NULL,
-        estado ENUM('activo', 'baja') DEFAULT 'activo'
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        estado VARCHAR(50) DEFAULT 'activo'
+    ) ENGINE=InnoDB");
+
+    // ---------------------------------------------------------
+    // BLOQUE 2: NUEVAS TABLAS (Clientes Jurídicos y Garantías)
+    // ---------------------------------------------------------
+
+    // 2.1 Tabla Clientes Jurídicos (Extensión de tabla clientes)
+    $conn->exec("CREATE TABLE IF NOT EXISTS clientes_juridicos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        cliente_id INT NOT NULL,
+        razon_social VARCHAR(255) NOT NULL,
+        nombre_comercial VARCHAR(255) DEFAULT NULL,
+        nit VARCHAR(20) NOT NULL COMMENT 'Formato 0000-000000-000-0',
+        nrc VARCHAR(20) DEFAULT NULL COMMENT 'Numero Registro Contribuyente',
+        giro_economico VARCHAR(150) DEFAULT NULL,
+        representante_legal VARCHAR(200) NOT NULL,
+        dui_representante VARCHAR(20) NOT NULL,
+        fecha_constitucion DATE DEFAULT NULL,
+        UNIQUE KEY unique_nit (nit),
+        FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB");
+
+    // 2.2 Catálogo Tipos de Garantía
+    $conn->exec("CREATE TABLE IF NOT EXISTS tipos_garantia (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        descripcion TEXT DEFAULT NULL,
+        requiere_rug TINYINT(1) DEFAULT 1 COMMENT '1 si requiere inscripción en CNR'
+    ) ENGINE=InnoDB");
+
+    // 2.3 Tabla Maestra de Garantías
+    $conn->exec("CREATE TABLE IF NOT EXISTS garantias (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        cliente_id INT NOT NULL,
+        tipo_garantia_id INT NOT NULL,
+        codigo_interno VARCHAR(50) NOT NULL,
+        descripcion_bien TEXT NOT NULL,
+        ubicacion_fisica TEXT NOT NULL,
+        valor_comercial DECIMAL(15,2) NOT NULL COMMENT 'Segun avaluo',
+        valor_realizacion DECIMAL(15,2) NOT NULL COMMENT 'Valor castigado para credito',
+        folio_rug VARCHAR(50) DEFAULT NULL COMMENT 'Inscripcion CNR',
+        fecha_inscripcion_rug DATE DEFAULT NULL,
+        estado ENUM('tramite','vigente','deteriorada','ejecucion','liberada') DEFAULT 'tramite',
+        fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+        FOREIGN KEY (tipo_garantia_id) REFERENCES tipos_garantia(id)
+    ) ENGINE=InnoDB");
+
+    // 2.4 Tabla Pivote: Préstamos <-> Garantías (Muchos a Muchos)
+    $conn->exec("CREATE TABLE IF NOT EXISTS prestamos_garantias (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        prestamo_id INT NOT NULL,
+        garantia_id INT NOT NULL,
+        monto_gravado DECIMAL(15,2) NOT NULL,
+        fecha_asignacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (prestamo_id) REFERENCES prestamos(id) ON DELETE CASCADE,
+        FOREIGN KEY (garantia_id) REFERENCES garantias(id)
+    ) ENGINE=InnoDB");
+
+    // 2.5 Tabla Seguros de Garantía (Para alertas de vencimiento)
+    $conn->exec("CREATE TABLE IF NOT EXISTS garantias_seguros (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        garantia_id INT NOT NULL,
+        aseguradora VARCHAR(100) NOT NULL,
+        numero_poliza VARCHAR(100) NOT NULL,
+        fecha_inicio DATE NOT NULL,
+        fecha_vencimiento DATE NOT NULL,
+        monto_asegurado DECIMAL(15,2) NOT NULL,
+        estado ENUM('vigente','vencida','cancelada') DEFAULT 'vigente',
+        FOREIGN KEY (garantia_id) REFERENCES garantias(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB");
+
+    // 2.6 Historial de Avalúos
+    $conn->exec("CREATE TABLE IF NOT EXISTS garantias_avaluos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        garantia_id INT NOT NULL,
+        perito_nombre VARCHAR(150) NOT NULL,
+        numero_registro_perito VARCHAR(50) DEFAULT NULL,
+        fecha_avaluo DATE NOT NULL,
+        valor_asignado DECIMAL(15,2) NOT NULL,
+        observaciones TEXT DEFAULT NULL,
+        FOREIGN KEY (garantia_id) REFERENCES garantias(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB");
+
+    // ---------------------------------------------------------
+    // BLOQUE 3: INSERTAR DATOS POR DEFECTO
+    // ---------------------------------------------------------
     
-    echo "<div class='success'>✅ Tabla 'activos' creada</div>";
-    
-    // =================== CREAR USUARIO ADMIN POR DEFECTO ===================
-    echo "<div class='step'><strong>Paso 8:</strong> Creando usuario administrador por defecto...</div>";
-    
-    // Verificar si ya existe algún usuario
-    $check = $conn->query("SELECT COUNT(*) as total FROM usuarios");
-    $result = $check->fetch(PDO::FETCH_ASSOC);
-    
-    if ($result['total'] == 0) {
-        // Crear usuario administrador
-        $nombre = "Administrador";
-        $email = "admin@financiera.com";
-        $password_hash = password_hash('admin123', PASSWORD_DEFAULT);
-        
-        $sql = "INSERT INTO usuarios (nombre, email, password, rol) 
-                VALUES (:nombre, :email, :password, 'admin')";
-        
-        $stmt = $conn->prepare($sql);
-        $stmt->bindParam(':nombre', $nombre);
-        $stmt->bindParam(':email', $email);
-        $stmt->bindParam(':password', $password_hash);
-        
-        if ($stmt->execute()) {
-            echo "<div class='info'>";
-            echo "✅ Usuario administrador creado automáticamente<br>";
-            echo "📧 <strong>Email:</strong> admin@financiera.com<br>";
-            echo "🔑 <strong>Password:</strong> admin123<br>";
-            echo "⚠️ <em>Cambia esta contraseña después del primer login</em>";
-            echo "</div>";
-        }
-    } else {
-        echo "<div class='warning'>ℹ️ Ya existen usuarios en el sistema</div>";
+    // Verificar si la tabla tipos_garantia está vacía para insertar defaults
+    $stmt = $conn->query("SELECT COUNT(*) FROM tipos_garantia");
+    if ($stmt->fetchColumn() == 0) {
+        $sql = "INSERT INTO tipos_garantia (nombre, descripcion, requiere_rug) VALUES 
+                ('Prenda sin Desplazamiento', 'Maquinaria, Vehículos o Equipo que conserva el deudor', 1),
+                ('Garantía Mobiliaria sobre Inventario', 'Inventarios rotatorios de mercadería', 1),
+                ('Cesión de Derechos Económicos', 'Facturas por cobrar o contratos', 1),
+                ('Pignoración de Acciones', 'Acciones de la sociedad', 0),
+                ('Depósito a Plazo (Back-to-Back)', 'Garantía líquida en efectivo', 0)";
+        $conn->exec($sql);
+        echo "<p style='color: blue;'>ℹ️ Catálogo de Tipos de Garantía inicializado.</p>";
     }
-    
-    // =================== MOSTRAR RESUMEN ===================
-    echo "<div class='step'><strong>Paso 9:</strong> Verificando tablas creadas...</div>";
-    
-    $tables = $conn->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
-    
-    echo "<div class='success'><strong>✅ INSTALACIÓN COMPLETADA</strong></div>";
-    echo "<h3>📊 Tablas creadas en la base de datos:</h3>";
-    echo "<ul>";
-    foreach ($tables as $table) {
-        echo "<li>$table</li>";
-    }
-    echo "</ul>";
-    
-    echo "<div class='info'>";
-    echo "<h3>🎯 Siguientes pasos:</h3>";
-    echo "<ol>";
-    echo "<li><strong>BORRA este archivo install.php</strong> por seguridad</li>";
-    echo "<li>Ve al <a href='login/login.php'>Login</a> para acceder al sistema</li>";
-    echo "<li>Usa las credenciales: admin@financiera.com / admin123</li>";
-    echo "<li>Cambia la contraseña del administrador después del primer login</li>";
-    echo "</ol>";
-    echo "</div>";
-    
-    echo "<a href='login/login.php' class='btn'>🚀 Ir al Login</a>";
-    echo "<br><br>";
-    echo "<a href='javascript:location.reload()' class='btn' style='background: #6c757d;'>🔄 Re-ejecutar instalación</a>";
+
+    echo "<p style='color: green;'>✅ Base de datos, tablas base y módulo de garantías creados exitosamente!</p>";
+    echo "<p>Ahora puedes acceder al sistema en <a href='index.php'>index.php</a></p>";
     
 } catch(PDOException $e) {
-    echo "<div class='error'>";
-    echo "❌ <strong>Error durante la instalación:</strong><br>";
-    echo $e->getMessage();
-    echo "</div>";
-    echo "<p>Verifica que MySQL esté corriendo y las credenciales sean correctas.</p>";
+    echo "<p style='color: red;'>❌ Error: " . $e->getMessage() . "</p>";
 }
-
-echo "</div></body></html>";
 ?>
