@@ -1,6 +1,6 @@
 <?php
 // install.php - Ejecutar una sola vez
-echo "<h2>Instalación del Sistema Financiero (Con Módulo de Garantías para Clientes Naturales y Jurídicos)</h2>";
+echo "<h2>Instalación del Sistema Financiero </h2>";
 
 $host = 'localhost';
 $username = 'root';
@@ -15,7 +15,7 @@ try {
     // 2. Crear base de datos si no existe
     $conn->exec("CREATE DATABASE IF NOT EXISTS $dbname CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
     $conn->exec("USE $dbname");
-
+    
     // ---------------------------------------------------------
     // BLOQUE 0: TABLA USUARIOS 
     // ---------------------------------------------------------
@@ -30,7 +30,6 @@ try {
         rol VARCHAR(20) DEFAULT 'usuario' COMMENT 'admin, usuario',
         fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB");
-
     
     // ---------------------------------------------------------
     // BLOQUE 1: TABLAS BASE (Existentes)
@@ -148,7 +147,7 @@ try {
         FOREIGN KEY (tipo_garantia_id) REFERENCES tipos_garantia(id)
     ) ENGINE=InnoDB");
 
-    // 2.4 Tabla Pivote: Préstamos <-> Garantías (Muchos a Muchos)
+    // 2.4 Tabla Pivote: Préstamos <-> Garantías (Many-to-Many)
     $conn->exec("CREATE TABLE IF NOT EXISTS prestamos_garantias (
         id INT AUTO_INCREMENT PRIMARY KEY,
         prestamo_id INT NOT NULL,
@@ -159,7 +158,7 @@ try {
         FOREIGN KEY (garantia_id) REFERENCES garantias(id)
     ) ENGINE=InnoDB");
 
-    // 2.5 Tabla Seguros de Garantía (Para alertas de vencimiento)
+    // 2.5 Tabla Seguros de Garantía
     $conn->exec("CREATE TABLE IF NOT EXISTS garantias_seguros (
         id INT AUTO_INCREMENT PRIMARY KEY,
         garantia_id INT NOT NULL,
@@ -185,140 +184,10 @@ try {
     ) ENGINE=InnoDB");
 
     // ---------------------------------------------------------
-    // BLOQUE 3: NUEVAS TABLAS PARA GARANTÍAS DE CLIENTES NATURALES
-    // ---------------------------------------------------------
-
-    // 3.1 Catálogo Tipos de Garantías Personales
-    $conn->exec("CREATE TABLE IF NOT EXISTS tipos_garantia_personal (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        nombre VARCHAR(100) NOT NULL,
-        descripcion TEXT DEFAULT NULL,
-        requiere_documentos TINYINT(1) DEFAULT 1,
-        orden_prioridad INT DEFAULT 1 COMMENT 'Prioridad en ejecución (1 mayor, 5 menor)'
-    ) ENGINE=InnoDB");
-
-    // 3.2 Tabla Fiadores y Codeudores
-    $conn->exec("CREATE TABLE IF NOT EXISTS garantias_personales (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        cliente_id INT NOT NULL COMMENT 'Cliente principal (deudor)',
-        tipo_garantia_personal_id INT NOT NULL COMMENT 'Fiador o Codeudor',
-        nombre_completo VARCHAR(255) NOT NULL,
-        dui VARCHAR(20) NOT NULL,
-        nit VARCHAR(20),
-        fecha_nacimiento DATE,
-        direccion TEXT,
-        telefono VARCHAR(20),
-        email VARCHAR(100),
-        ocupacion VARCHAR(100),
-        ingresos_mensuales DECIMAL(15,2) NOT NULL,
-        egresos_mensuales DECIMAL(15,2) DEFAULT 0,
-        capacidad_pago DECIMAL(15,2) DEFAULT 0,
-        estado_civil VARCHAR(50),
-        parentesco_cliente VARCHAR(100) COMMENT 'Relación con el cliente principal',
-        fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE,
-        FOREIGN KEY (tipo_garantia_personal_id) REFERENCES tipos_garantia_personal(id)
-    ) ENGINE=InnoDB");
-
-    // 3.3 Tabla Hipotecas para Clientes Naturales
-    $conn->exec("CREATE TABLE IF NOT EXISTS hipotecas (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        cliente_id INT NOT NULL COMMENT 'Cliente dueño del inmueble',
-        numero_matricula_cnr VARCHAR(100) NOT NULL COMMENT 'Número de matrícula en el CNR',
-        descripcion_inmueble TEXT NOT NULL,
-        ubicacion_inmueble TEXT NOT NULL,
-        tipo_inmueble VARCHAR(100) COMMENT 'Casa, apartamento, terreno, local comercial, etc.',
-        area_terreno DECIMAL(10,2) COMMENT 'En metros cuadrados',
-        area_construccion DECIMAL(10,2) COMMENT 'En metros cuadrados',
-        valor_avaluo DECIMAL(15,2) NOT NULL,
-        fecha_avaluo DATE NOT NULL,
-        grado_hipoteca ENUM('1er_grado', '2do_grado', '3er_grado', 'otro') DEFAULT '1er_grado',
-        porcentaje_cobertura DECIMAL(5,2) DEFAULT 70.00 COMMENT 'Porcentaje del avalúo que cubre el préstamo',
-        fecha_inscripcion DATE,
-        notaria_inscripcion VARCHAR(150),
-        folio_real VARCHAR(50),
-        estado ENUM('tramite', 'vigente', 'ejecucion', 'liberada') DEFAULT 'tramite',
-        observaciones TEXT,
-        fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB");
-
-    // 3.4 Tabla Historial de Avalúos de Hipotecas (para alertas de vencimiento)
-    $conn->exec("CREATE TABLE IF NOT EXISTS hipotecas_avaluos (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        hipoteca_id INT NOT NULL,
-        perito_nombre VARCHAR(255) NOT NULL,
-        numero_registro_perito VARCHAR(50),
-        fecha_avaluo DATE NOT NULL,
-        valor_avaluo DECIMAL(15,2) NOT NULL,
-        metodo_valuacion VARCHAR(100),
-        vida_util_estimada INT COMMENT 'En años',
-        estado_conservacion ENUM('excelente', 'bueno', 'regular', 'malo') DEFAULT 'bueno',
-        observaciones TEXT,
-        proximo_avaluo DATE COMMENT 'Fecha sugerida para próximo avalúo',
-        archivo_avaluo VARCHAR(255) COMMENT 'Ruta del documento escaneado',
-        fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (hipoteca_id) REFERENCES hipotecas(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB");
-
-    // 3.5 Tabla de Alertas de Vencimiento de Avalúos
-    $conn->exec("CREATE TABLE IF NOT EXISTS alertas_avaluos (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        hipoteca_id INT NOT NULL,
-        tipo_alerta VARCHAR(50) COMMENT 'avaluo_proximo_vencer, avaluo_vencido',
-        fecha_alerta DATE NOT NULL,
-        fecha_vencimiento DATE NOT NULL,
-        dias_restantes INT,
-        estado ENUM('pendiente', 'notificada', 'resuelta') DEFAULT 'pendiente',
-        fecha_notificacion DATETIME,
-        usuario_notificado VARCHAR(100),
-        observaciones TEXT,
-        FOREIGN KEY (hipoteca_id) REFERENCES hipotecas(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB");
-
-    // 3.6 Tabla Relación Préstamos - Garantías Personales
-    $conn->exec("CREATE TABLE IF NOT EXISTS prestamos_garantias_personales (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        prestamo_id INT NOT NULL,
-        garantia_personal_id INT NOT NULL,
-        monto_responsabilidad DECIMAL(15,2) NOT NULL COMMENT 'Monto máximo por el que responde',
-        porcentaje_responsabilidad DECIMAL(5,2) DEFAULT 100.00,
-        fecha_asignacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (prestamo_id) REFERENCES prestamos(id) ON DELETE CASCADE,
-        FOREIGN KEY (garantia_personal_id) REFERENCES garantias_personales(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB");
-
-    // 3.7 Tabla Relación Préstamos - Hipotecas
-    $conn->exec("CREATE TABLE IF NOT EXISTS prestamos_hipotecas (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        prestamo_id INT NOT NULL,
-        hipoteca_id INT NOT NULL,
-        monto_garantizado DECIMAL(15,2) NOT NULL,
-        porcentaje_cobertura DECIMAL(5,2) DEFAULT 70.00,
-        fecha_asignacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (prestamo_id) REFERENCES prestamos(id) ON DELETE CASCADE,
-        FOREIGN KEY (hipoteca_id) REFERENCES hipotecas(id) ON DELETE CASCADE
-    ) ENGINE=InnoDB");
-
-    // 3.8 Tabla Documentos de Garantías
-    $conn->exec("CREATE TABLE IF NOT EXISTS documentos_garantias (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        tipo_garantia ENUM('personal', 'hipoteca', 'juridica') NOT NULL,
-        garantia_id INT NOT NULL COMMENT 'ID de la garantía según el tipo',
-        tipo_documento VARCHAR(100) NOT NULL COMMENT 'DUI, NIT, Escritura, Avalúo, etc.',
-        nombre_documento VARCHAR(255) NOT NULL,
-        ruta_archivo VARCHAR(500) NOT NULL,
-        fecha_subida TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        usuario_subio VARCHAR(100),
-        observaciones TEXT,
-        INDEX idx_tipo_garantia (tipo_garantia, garantia_id)
-    ) ENGINE=InnoDB");
-
-    // ---------------------------------------------------------
-    // BLOQUE 4: INSERTAR DATOS POR DEFECTO
+    // BLOQUE 3: INSERTAR DATOS POR DEFECTO
     // ---------------------------------------------------------
     
-    // Verificar si la tabla tipos_garantia está vacía para insertar defaults
+    // Verificar si la tabla tipos_garantia está vacía
     $stmt = $conn->query("SELECT COUNT(*) FROM tipos_garantia");
     if ($stmt->fetchColumn() == 0) {
         $sql = "INSERT INTO tipos_garantia (nombre, descripcion, requiere_rug) VALUES 
@@ -328,25 +197,9 @@ try {
                 ('Pignoración de Acciones', 'Acciones de la sociedad', 0),
                 ('Depósito a Plazo (Back-to-Back)', 'Garantía líquida en efectivo', 0)";
         $conn->exec($sql);
-        echo "<p style='color: blue;'>ℹ️ Catálogo de Tipos de Garantía Jurídica inicializado.</p>";
+        echo "<p style='color: blue;'>ℹ️ Catálogo de Tipos de Garantía inicializado.</p>";
     }
-
-    // Insertar datos por defecto para tipos de garantías personales
-    $stmt = $conn->query("SELECT COUNT(*) FROM tipos_garantia_personal");
-    if ($stmt->fetchColumn() == 0) {
-        $sql = "INSERT INTO tipos_garantia_personal (nombre, descripcion, requiere_documentos, orden_prioridad) VALUES 
-                ('Fiador (Aval)', 'Persona que garantiza el pago en caso de incumplimiento del deudor principal', 1, 1),
-                ('Codeudor Solidario', 'Persona que responde solidariamente con el deudor principal', 1, 2),
-                ('Fiador con Bienes', 'Fiador que además ofrece bienes como respaldo', 1, 3),
-                ('Codeudor Mancomunado', 'Codeudor con responsabilidad proporcional', 1, 4)";
-        $conn->exec($sql);
-        echo "<p style='color: blue;'>ℹ️ Catálogo de Tipos de Garantía Personal inicializado.</p>";
-    }
-
-    echo "<p style='color: green;'>✅ Base de datos, tablas base y módulos de garantías (naturales y jurídicas) creados exitosamente!</p>";
-    echo "<p>Ahora puedes acceder al sistema en <a href='index.php'>index.php</a></p>";
-
-
+    
     // Verificar si la tabla usuarios está vacía para insertar usuario admin por defecto
     $stmt = $conn->query("SELECT COUNT(*) FROM usuarios");
     if ($stmt->fetchColumn() == 0) {
@@ -362,36 +215,23 @@ try {
         echo "<li>Usuario: usuario@financiera.com / admin123</li>";
         echo "</ul>";
     }
-    
-    // ---------------------------------------------------------
-    // BLOQUE 5: CREAR VISTAS ÚTILES
-    // ---------------------------------------------------------
-    
-    // Vista para alertas de avalúos vencidos o por vencer
-    $conn->exec("
-    CREATE OR REPLACE VIEW vista_alertas_avaluos AS
-    SELECT 
-        h.id as hipoteca_id,
-        c.nombre as cliente_nombre,
-        c.codigo as cliente_codigo,
-        h.numero_matricula_cnr,
-        h.descripcion_inmueble,
-        h.valor_avaluo,
-        h.fecha_avaluo,
-        DATEDIFF(CURDATE(), h.fecha_avaluo) as dias_desde_avaluo,
-        CASE 
-            WHEN DATEDIFF(CURDATE(), h.fecha_avaluo) > 1095 THEN 'VENCIDO (más de 3 años)'
-            WHEN DATEDIFF(CURDATE(), h.fecha_avaluo) > 730 THEN 'PRÓXIMO A VENCER (más de 2 años)'
-            ELSE 'VIGENTE'
-        END as estado_avaluo,
-        DATE_ADD(h.fecha_avaluo, INTERVAL 3 YEAR) as fecha_proximo_avaluo,
-        DATEDIFF(DATE_ADD(h.fecha_avaluo, INTERVAL 3 YEAR), CURDATE()) as dias_para_proximo_avaluo
-    FROM hipotecas h
-    INNER JOIN clientes c ON h.cliente_id = c.id
-    WHERE h.estado = 'vigente'
-    ");
-    
-    echo "<p style='color: blue;'>ℹ️ Vista de alertas de avalúos creada.</p>";
+
+    echo "<p style='color: green;'>✅ Base de datos y todas las tablas creadas exitosamente!</p>";
+    echo "<p><strong>Tablas creadas:</strong></p>";
+    echo "<ul>";
+    echo "<li>✅ usuarios </li>";
+    echo "<li>✅ clientes</li>";
+    echo "<li>✅ prestamos</li>";
+    echo "<li>✅ pagos</li>";
+    echo "<li>✅ activos</li>";
+    echo "<li>✅ clientes_juridicos</li>";
+    echo "<li>✅ tipos_garantia</li>";
+    echo "<li>✅ garantias</li>";
+    echo "<li>✅ prestamos_garantias</li>";
+    echo "<li>✅ garantias_seguros</li>";
+    echo "<li>✅ garantias_avaluos</li>";
+    echo "</ul>";
+    echo "<p>Ahora puedes acceder al sistema en <a href='../Sistema-de-analisis-financiero/login/login.php'>Iniciar sesión</a></p>";
     
 } catch(PDOException $e) {
     echo "<p style='color: red;'>❌ Error: " . $e->getMessage() . "</p>";
