@@ -94,8 +94,9 @@ function createTables($conn) {
     }
 }
 
-// Inicializar base de datos
-$database = new Database();
-$conn = $database->getConnection();
-createTables($conn);
+// =================== ¡IMPORTANTE! ===================
+// COMENTA o ELIMINA estas 3 líneas:
+// $database = new Database();
+// $conn = $database->getConnection();
+// createTables($conn);
 ?>
