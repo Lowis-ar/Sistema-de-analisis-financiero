@@ -521,7 +521,7 @@ async function saveCliente(event) {
         let result;
         // Determinar endpoint y método
         // NOTA: Asegúrate de que tu backend acepte 'clientes.php' para ambos o usa la lógica de endpoint diferenciado
-        const endpoint = isJuridico ? 'includes/clientes_juridicos.php' : 'includes/clientes.php';
+        const endpoint = isJuridico ? 'clientes_juridicos.php' : 'clientes.php';
         
         if (editingClienteId) {
             // Actualizar
