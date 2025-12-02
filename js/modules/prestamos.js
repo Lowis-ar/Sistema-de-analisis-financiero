@@ -816,100 +816,182 @@ function validarHipoteca() {
 // FUNCIONES DE LISTADO
 // ==========================================
 
+// Reemplaza la función completa cargarListaPrestamos() en prestamos.js:
+
 async function cargarListaPrestamos() {
     try {
-        if (window.showLoading) window.showLoading();
+        console.log('🔍 Iniciando carga de préstamos...');
         
-        const response = await window.apiCall ? await window.apiCall('prestamos.php?listar=activos') : {error: 'API no disponible'};
+        // Mostrar loading
+        const mainContent = document.getElementById('main-content');
+        if (mainContent) {
+            mainContent.innerHTML = `
+                <div class="flex justify-center items-center h-64">
+                    <div class="text-center">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                        <p class="text-gray-600">Cargando créditos activos...</p>
+                    </div>
+                </div>
+            `;
+        }
         
-        if (response.error) {
-            if (window.showNotification) {
-                window.showNotification(response.error, 'error');
+        // Intentar llamar a la API
+        let response;
+        try {
+            response = await fetch('api/prestamos.php');
+            console.log('📡 Status de respuesta:', response.status);
+            
+            if (!response.ok) {
+                throw new Error(`Error ${response.status}: ${response.statusText}`);
+            }
+            
+            response = await response.json();
+            console.log('📦 Datos recibidos:', response);
+            
+        } catch (fetchError) {
+            console.error('❌ Error en fetch:', fetchError);
+            
+            // Mostrar error
+            if (mainContent) {
+                mainContent.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-8 text-center max-w-2xl mx-auto">
+                        <i class="fas fa-exclamation-triangle text-red-500 text-4xl mb-4"></i>
+                        <h3 class="text-xl font-bold text-red-800 mb-2">Error de conexión</h3>
+                        <p class="text-red-600 mb-4">No se pudo cargar la lista de créditos.</p>
+                        <p class="text-gray-600 text-sm mb-6">Error: ${fetchError.message}</p>
+                        <div class="space-x-4">
+                            <button onclick="cargarListaPrestamos()" class="btn btn-secondary">
+                                <i class="fas fa-redo mr-2"></i> Reintentar
+                            </button>
+                            <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                                <i class="fas fa-arrow-left mr-2"></i> Volver
+                            </button>
+                        </div>
+                    </div>
+                `;
             }
             return;
         }
         
-        const listaPrestamos = document.getElementById('listaPrestamos');
-        if (listaPrestamos) listaPrestamos.classList.remove('hidden');
-        
-        // Ocultar otros elementos
-        document.querySelectorAll('.grid').forEach(el => {
-            if (el.id !== 'listaPrestamos' && el.classList.contains('grid')) {
-                el.classList.add('hidden');
+        // Verificar si hay datos
+        if (!response || response.length === 0) {
+            if (mainContent) {
+                mainContent.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="flex justify-between items-center">
+                            <h2 class="text-2xl font-bold text-gray-800">Créditos Activos</h2>
+                            <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                                <i class="fas fa-arrow-left mr-2"></i> Volver
+                            </button>
+                        </div>
+                        
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
+                            <i class="fas fa-credit-card text-blue-500 text-4xl mb-4"></i>
+                            <h4 class="text-lg font-semibold text-blue-800 mb-2">No hay créditos registrados</h4>
+                            <p class="text-blue-600 mb-6">Aún no se han otorgado créditos en el sistema.</p>
+                            <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                                <i class="fas fa-plus mr-2"></i> Otorgar primer crédito
+                            </button>
+                        </div>
+                    </div>
+                `;
             }
-        });
+            return;
+        }
         
-        const tablaHTML = `
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cuota</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Saldo</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Garantía</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        ${response.map(prestamo => `
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-medium text-gray-900">${prestamo.cliente_nombre || 'N/A'}</div>
-                                    <div class="text-sm text-gray-500">${prestamo.codigo_cliente || 'N/A'}</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-semibold text-gray-900">${window.formatCurrency ? window.formatCurrency(prestamo.monto) : '$' + prestamo.monto}</div>
-                                    <div class="text-xs text-gray-500">${prestamo.plazo || 0} meses</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-semibold text-blue-600">${window.formatCurrency ? window.formatCurrency(prestamo.cuota) : '$' + prestamo.cuota}</div>
-                                    <div class="text-xs text-gray-500">${prestamo.tasa || 0}% anual</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-bold ${parseFloat(prestamo.saldo_actual) > 0 ? 'text-gray-900' : 'text-green-600'}">
-                                        ${window.formatCurrency ? window.formatCurrency(prestamo.saldo_actual) : '$' + prestamo.saldo_actual}
-                                    </div>
-                                    ${prestamo.dias_mora > 0 ? `
-                                        <div class="text-xs text-red-600">
-                                            <i class="fas fa-exclamation-triangle"></i> ${prestamo.dias_mora || 0} días en mora
-                                        </div>
-                                    ` : ''}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-900">${prestamo.tipo_garantia || 'Sin garantía'}</div>
-                                    <div class="text-xs text-gray-500 truncate max-w-xs">${prestamo.descripcion_garantia || ''}</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    ${window.getBadgeEstado ? window.getBadgeEstado(prestamo.estado || 'normal') : prestamo.estado || 'normal'}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <button onclick="verDetallesPrestamo(${prestamo.id})" class="text-blue-600 hover:text-blue-900 mr-3">
-                                        <i class="fas fa-eye"></i>
-                                    </button>
-                                    <button onclick="registrarPago(${prestamo.id})" class="text-green-600 hover:text-green-900">
-                                        <i class="fas fa-dollar-sign"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
-        
-        const tablaPrestamosContainer = document.getElementById('tablaPrestamosContainer');
-        if (tablaPrestamosContainer) {
-            tablaPrestamosContainer.innerHTML = tablaHTML;
+        // Mostrar los datos
+        if (mainContent) {
+            // Crear tabla simple
+            let tablaHTML = `
+                <div class="space-y-6">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl font-bold text-gray-800">Créditos Activos (${response.length})</h2>
+                        <div class="space-x-2">
+                            <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                                <i class="fas fa-plus mr-2"></i> Nuevo Crédito
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <p class="text-sm text-gray-600">Cartera Total</p>
+                            <p class="text-2xl font-bold text-gray-900">
+                                ${formatCurrency(response.reduce((sum, p) => sum + parseFloat(p.saldo_actual || 0), 0))}
+                            </p>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <p class="text-sm text-gray-600">Préstamos Activos</p>
+                            <p class="text-2xl font-bold text-blue-600">${response.length}</p>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <p class="text-sm text-gray-600">En Mora</p>
+                            <p class="text-2xl font-bold text-red-600">
+                                ${response.filter(p => p.dias_mora > 0).length}
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-lg shadow overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Saldo</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+            `;
+            
+            response.forEach(prestamo => {
+                tablaHTML += `
+                    <tr>
+                        <td class="px-4 py-3">
+                            <div class="font-medium text-gray-900">${prestamo.cliente_nombre || 'N/A'}</div>
+                            <div class="text-sm text-gray-500">${prestamo.codigo_cliente || 'N/A'}</div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <div class="font-medium">${formatCurrency(prestamo.monto)}</div>
+                            <div class="text-sm text-gray-500">${prestamo.plazo} meses</div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <div class="font-bold ${parseFloat(prestamo.saldo_actual) > 0 ? 'text-gray-900' : 'text-green-600'}">
+                                ${formatCurrency(prestamo.saldo_actual)}
+                            </div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full ${prestamo.estado === 'normal' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                ${prestamo.estado || 'normal'}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tablaHTML += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center">
+                        <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                            <i class="fas fa-arrow-left mr-2"></i> Volver al formulario
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            mainContent.innerHTML = tablaHTML;
         }
         
     } catch (error) {
-        console.error('Error cargando préstamos:', error);
-        if (window.showNotification) {
-            window.showNotification('Error al cargar la lista de créditos', 'error');
-        }
+        console.error('❌ Error fatal:', error);
+        alert('Error al cargar los créditos: ' + error.message);
+        loadPrestamosModule(); // Volver al formulario
     }
 }
 
@@ -959,3 +1041,15 @@ window.cargarListaPrestamos = cargarListaPrestamos;
 window.mostrarFormularioNuevo = mostrarFormularioNuevo;
 window.verDetallesPrestamo = verDetallesPrestamo;
 window.registrarPago = registrarPago;
+
+
+// Agrega esta función al final de prestamos.js:
+
+function verGarantiasPrestamo(id) {
+    if (window.showNotification) {
+        window.showNotification(`Funcionalidad en desarrollo: Ver garantías del préstamo #${id}`, 'info');
+    }
+}
+
+// No olvides exportarla:
+window.verGarantiasPrestamo = verGarantiasPrestamo;

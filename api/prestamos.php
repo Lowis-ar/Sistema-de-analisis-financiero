@@ -42,14 +42,54 @@ switch($method) {
         echo json_encode(['error' => 'Método no permitido']);
 }
 
+// En api/prestamos.php, modifica la función handleGet:
+
 function handleGet($conn) {
     if (isset($_GET['listar']) && $_GET['listar'] == 'activos') {
         listarPrestamosActivos($conn);
     } elseif (isset($_GET['id'])) {
         getPrestamoById($conn, $_GET['id']);
     } else {
-        http_response_code(400);
-        echo json_encode(['error' => 'Parámetro no válido']);
+        // Listar todos los préstamos si no hay parámetro
+        listarTodosPrestamos($conn);
+    }
+}
+
+// Añade esta nueva función:
+function listarTodosPrestamos($conn) {
+    try {
+        $query = "
+            SELECT 
+                p.*,
+                c.nombre as cliente_nombre,
+                c.codigo as codigo_cliente,
+                c.capacidad_pago,
+                COALESCE(
+                    (SELECT nombre_completo FROM garantias_personales gp 
+                     INNER JOIN prestamos_garantias_personales pgp ON gp.id = pgp.garantia_personal_id 
+                     WHERE pgp.prestamo_id = p.id LIMIT 1),
+                    (SELECT descripcion_inmueble FROM hipotecas h 
+                     INNER JOIN prestamos_hipotecas ph ON h.id = ph.hipoteca_id 
+                     WHERE ph.prestamo_id = p.id LIMIT 1)
+                ) as descripcion_garantia,
+                CASE 
+                    WHEN EXISTS(SELECT 1 FROM prestamos_garantias_personales WHERE prestamo_id = p.id) THEN 'Fiador'
+                    WHEN EXISTS(SELECT 1 FROM prestamos_hipotecas WHERE prestamo_id = p.id) THEN 'Hipoteca'
+                    ELSE 'Sin garantía'
+                END as tipo_garantia
+            FROM prestamos p
+            INNER JOIN clientes c ON p.cliente_id = c.id
+            ORDER BY p.fecha_otorgamiento DESC
+        ";
+        
+        $stmt = $conn->query($query);
+        $prestamos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        echo json_encode($prestamos);
+        
+    } catch(PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
     }
 }
 

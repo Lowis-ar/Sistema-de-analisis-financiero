@@ -5,7 +5,8 @@ require_once '../config/database.php';
 $error = "";
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $database = new Database();
+    // CORRECCIÓN: Usar el método estático getInstance() en lugar de new Database()
+    $database = Database::getInstance(); // Cambiar esta línea
     $db = $database->getConnection();
     
     $email = trim($_POST['email']);
@@ -58,6 +59,7 @@ if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
+        /* (El CSS permanece igual) */
         * {
             margin: 0;
             padding: 0;
