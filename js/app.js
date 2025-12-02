@@ -179,7 +179,7 @@ function loadClientesModule() {
     document.getElementById('btnNuevoCliente')?.addEventListener('click', showClienteForm);
     document.getElementById('btnAgregarCliente')?.addEventListener('click', showClienteForm);
 }
-
+/*
 function showClienteForm() {
     const content = `
         <div class="card">
@@ -249,7 +249,7 @@ function showClienteForm() {
         loadClientesModule();
     });
 }
-
+*/
 function guardarCliente() {
     alert('Cliente guardado exitosamente!');
     loadClientesModule();
