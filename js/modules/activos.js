@@ -200,6 +200,21 @@ async function saveActivo(event) {
     }
 }
 
+// ... al final de js/modules/activos.js ...
+
+function loadActivosModule() {
+    if (typeof loadActivos === 'function') {
+        loadActivos();
+    } else {
+         document.getElementById('main-content').innerHTML = `
+            <div class="card p-8 text-center">
+                <h2 class="text-2xl font-bold mb-4">Módulo de Activos</h2>
+                <p class="text-gray-500">Módulo en construcción o función loadActivos() no encontrada.</p>
+            </div>
+        `;
+    }
+}
+
 // Hacer funciones disponibles globalmente
 window.showNewActivoForm = showNewActivoForm;
 window.cancelNewActivo = cancelNewActivo;
