@@ -1,15 +1,40 @@
 let garantiasView = 'list';
 let editingGarantiaId = null;
 
+// ==========================================
+// CARGA INICIAL Y LISTADO
+// ==========================================
+
 async function loadGarantiasModule() {
     showLoading();
     garantiasView = 'list';
     editingGarantiaId = null;
 
     try {
-        // Obtenemos las garantías usando la ruta correcta
-        // Nota: Asegúrate de que garantias.php devuelva el JSON esperado
-        const garantias = await apiCall('includes/garantias.php');
+        const response = await apiCall('garantias.php');
+        
+        // --- VALIDACIÓN DE SEGURIDAD ---
+        // Manejamos si la respuesta es un error, un array o null
+        let listaGarantias = [];
+        
+        if (response && response.error) {
+            // Caso A: El servidor respondió con un error explícito
+            console.error('Error del servidor:', response.error);
+            document.getElementById('main-content').innerHTML = `
+                <div class="card p-8 text-center text-red-500">
+                    <i class="fas fa-exclamation-circle text-4xl mb-2"></i>
+                    <p>Error del servidor: ${response.error}</p>
+                </div>`;
+            return;
+        } else if (Array.isArray(response)) {
+            // Caso B: Todo bien, es una lista
+            listaGarantias = response;
+        } else {
+            // Caso C: Respuesta desconocida o vacía, asumimos lista vacía para no romper la UI
+            console.warn('Respuesta no válida para garantías (se asume vacía):', response);
+            listaGarantias = [];
+        }
+        // -------------------------------
 
         const content = `
             <div class="space-y-6">
@@ -25,12 +50,11 @@ async function loadGarantiasModule() {
                 
                 <div class="flex gap-2 border-b overflow-x-auto pb-1">
                     <button class="px-4 py-2 border-b-2 border-blue-600 text-blue-600 font-bold whitespace-nowrap">Todas</button>
-                    <button class="px-4 py-2 text-gray-500 hover:text-blue-600 whitespace-nowrap">Por Vencer (Seguros)</button>
-                    <button class="px-4 py-2 text-gray-500 hover:text-blue-600 whitespace-nowrap">Requieren Avalúo</button>
+                    <button class="px-4 py-2 text-gray-500 hover:text-blue-600 whitespace-nowrap">Por Vencer</button>
                 </div>
 
                 <div id="garantiasContent">
-                    ${renderGarantiasList(garantias || [])}
+                    ${renderGarantiasList(listaGarantias)}
                 </div>
             </div>
         `;
@@ -42,13 +66,14 @@ async function loadGarantiasModule() {
         document.getElementById('main-content').innerHTML = `
             <div class="card p-8 text-center text-red-500">
                 <i class="fas fa-exclamation-triangle text-4xl mb-2"></i>
-                <p>Error al cargar el módulo de garantías.</p>
+                <p>Ocurrió un error inesperado al cargar el módulo.</p>
             </div>`;
     }
 }
 
 function renderGarantiasList(garantias) {
-    if (!garantias || garantias.length === 0) {
+    // Doble verificación de seguridad
+    if (!Array.isArray(garantias) || garantias.length === 0) {
         return `
             <div class="card">
                 <div class="text-center py-12 text-gray-500">
@@ -64,7 +89,14 @@ function renderGarantiasList(garantias) {
     }
 
     const grid = garantias.map(g => {
-        // Definir colores según estado
+        // Validación de campos nulos para evitar "undefined" en pantalla
+        const estado = g.estado || 'tramite';
+        const desc = g.descripcion_bien || 'Sin descripción';
+        const cliente = g.cliente_nombre || 'Cliente Desconocido';
+        const tipo = g.tipo_nombre || 'General';
+        const valCom = parseFloat(g.valor_comercial || 0);
+        const valReal = parseFloat(g.valor_realizacion || 0);
+
         const estadoStyles = {
             'tramite': 'bg-yellow-100 text-yellow-800 border-yellow-200',
             'vigente': 'bg-green-100 text-green-800 border-green-200',
@@ -72,38 +104,39 @@ function renderGarantiasList(garantias) {
             'ejecucion': 'bg-orange-100 text-orange-800 border-orange-200',
             'liberada': 'bg-gray-100 text-gray-800 border-gray-200'
         };
-        const badgeClass = estadoStyles[g.estado] || 'bg-gray-100 text-gray-800';
+        const badgeClass = estadoStyles[estado] || 'bg-gray-100 text-gray-800';
 
+        // Usamos un objeto simple en el onclick para pasar el ID
         return `
             <div class="card hover:shadow-lg transition-shadow border-t-4 border-blue-500 cursor-pointer relative group"
-                 onclick="editGarantia(${g.id})">
+                 onclick="editGarantia(${g.id})"> 
                 
                 <div class="flex justify-between items-start mb-2">
-                    <span class="text-xs font-mono text-gray-400">${g.codigo_interno}</span>
+                    <span class="text-xs font-mono text-gray-400">${g.codigo_interno || 'N/A'}</span>
                     <span class="px-2 py-0.5 text-xs rounded-full border ${badgeClass} uppercase font-bold">
-                        ${g.estado}
+                        ${estado}
                     </span>
                 </div>
 
-                <h3 class="font-bold text-gray-800 truncate" title="${g.descripcion_bien}">
-                    ${g.descripcion_bien}
+                <h3 class="font-bold text-gray-800 truncate" title="${desc}">
+                    ${desc}
                 </h3>
                 <p class="text-sm text-blue-600 mb-3 truncate">
-                    <i class="fas fa-user mr-1"></i> ${g.cliente_nombre || 'Cliente Desconocido'}
+                    <i class="fas fa-user mr-1"></i> ${cliente}
                 </p>
 
                 <div class="bg-gray-50 p-2 rounded text-sm space-y-1 mb-3">
                     <div class="flex justify-between">
                         <span class="text-gray-500">Tipo:</span>
-                        <span class="font-medium truncate ml-2">${g.tipo_nombre}</span>
+                        <span class="font-medium truncate ml-2">${tipo}</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-500">Valor Comercial:</span>
-                        <span class="font-bold text-gray-800">${formatCurrency(g.valor_comercial)}</span>
+                        <span class="font-bold text-gray-800">${formatCurrency(valCom)}</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-500">Valor Realización:</span>
-                        <span class="font-bold text-blue-700">${formatCurrency(g.valor_realizacion)}</span>
+                        <span class="font-bold text-blue-700">${formatCurrency(valReal)}</span>
                     </div>
                 </div>
 
@@ -124,13 +157,13 @@ function renderGarantiasList(garantias) {
             ${grid}
         </div>
         <div class="mt-4 text-right text-xs text-gray-500">
-            Total Registros: ${garantias.length}
+            Mostrando ${garantias.length} registros
         </div>
     `;
 }
 
 // ==========================================
-// FORMULARIO (CREAR / EDITAR)
+// FORMULARIO Y EDICIÓN
 // ==========================================
 
 async function showGarantiaForm(garantia = null) {
@@ -140,8 +173,8 @@ async function showGarantiaForm(garantia = null) {
     try {
         // Cargar Catálogos necesarios (Clientes y Tipos) en paralelo
         const [clientes, tipos] = await Promise.all([
-            apiCall('includes/clientes.php'), // Trae lista de clientes
-            apiCall('includes/garantias.php?modulo=tipos') // Trae tipos de garantía
+            apiCall('clientes.php'), 
+            apiCall('garantias.php?modulo=tipos')
         ]);
 
         const content = `
@@ -175,19 +208,19 @@ function renderFormHTML(data, clientes, tipos) {
     const valComercial = data ? data.valor_comercial : 0;
     const valRealizacion = data ? data.valor_realizacion : 0;
     
-    // Generar opciones de Clientes
-    const clientesOptions = clientes.map(c => 
+    // Generar opciones de Clientes (Maneja si vienen arrays vacíos)
+    const clientesOptions = Array.isArray(clientes) ? clientes.map(c => 
         `<option value="${c.id}" ${data && data.cliente_id == c.id ? 'selected' : ''}>
             ${c.codigo} - ${c.nombre || c.razon_social}
         </option>`
-    ).join('');
+    ).join('') : '<option value="">Error cargando clientes</option>';
 
     // Generar opciones de Tipos
-    const tiposOptions = tipos.map(t => 
+    const tiposOptions = Array.isArray(tipos) ? tipos.map(t => 
         `<option value="${t.id}" ${data && data.tipo_garantia_id == t.id ? 'selected' : ''}>
             ${t.nombre}
         </option>`
-    ).join('');
+    ).join('') : '<option value="">Error cargando tipos</option>';
 
     return `
         <div class="card">
@@ -245,7 +278,7 @@ function renderFormHTML(data, clientes, tipos) {
                         <label class="text-blue-800 text-sm">Valor de Realización (Garantía)</label>
                         <input type="number" id="valor_realizacion" class="w-full p-1 bg-transparent border-none font-bold text-xl text-blue-900 focus:ring-0" 
                             value="${valRealizacion}" readonly>
-                        <p class="text-xs text-blue-600">Este es el monto máximo a cubrir</p>
+                        <p class="text-xs text-blue-600">Monto máximo a cubrir</p>
                     </div>
                 </div>
 
@@ -287,7 +320,7 @@ function renderFormHTML(data, clientes, tipos) {
 }
 
 // ==========================================
-// LÓGICA DE NEGOCIO Y API
+// LÓGICA DE NEGOCIO Y GUARDADO
 // ==========================================
 
 function updateCalculosGarantia() {
@@ -302,21 +335,22 @@ function updateCalculosGarantia() {
 
 async function editGarantia(id) {
     showLoading();
-    // Reutilizamos la lógica del listado pero filtramos el ID (o hacemos llamada individual)
-    // Lo ideal es tener un endpoint get_garantia.php?id=X, pero usaremos el listado general por simplicidad si no existe
+    // Simulación de búsqueda por ID (Idealmente el backend tendría endpoint getById)
     try {
-        // Opción A: Buscar en la lista ya cargada (si la tuviéramos en variable global)
-        // Opción B: Llamar API específica (Recomendado)
-        // Como no definimos un endpoint específico en el PHP de ejemplo para "get by id", 
-        // simularemos llamando a todas y buscando. *En producción usa un endpoint específico*.
-        
         const todas = await apiCall('includes/garantias.php');
-        const garantia = todas.find(g => g.id == id);
         
-        if (garantia) {
-            showGarantiaForm(garantia);
+        // Si la respuesta es un array, buscamos. Si es error, manejamos.
+        if (Array.isArray(todas)) {
+            const garantia = todas.find(g => g.id == id);
+            
+            if (garantia) {
+                showGarantiaForm(garantia);
+            } else {
+                showModal('Error', 'No se encontró la garantía especificada.');
+                loadGarantiasModule();
+            }
         } else {
-            showModal('Error', 'No se encontró la garantía especificada.');
+            showModal('Error', 'No se pudieron cargar las garantías para editar.');
             loadGarantiasModule();
         }
     } catch (e) {
@@ -336,19 +370,19 @@ async function saveGarantia(event) {
         descripcion_bien: document.getElementById('descripcion_bien').value,
         ubicacion_fisica: document.getElementById('ubicacion_fisica').value,
         valor_comercial: document.getElementById('valor_comercial').value,
-        valor_realizacion: document.getElementById('valor_realizacion').value, // Importante enviar esto calculado
+        valor_realizacion: document.getElementById('valor_realizacion').value,
         folio_rug: document.getElementById('folio_rug').value,
         fecha_inscripcion_rug: document.getElementById('fecha_inscripcion_rug').value,
         estado: document.getElementById('estado').value
     };
 
-    // Validación básica
+    // Validación básica de formulario
     if (payload.valor_comercial <= 0) {
         showModal('Error', 'El valor comercial debe ser mayor a 0');
         return;
     }
 
-    // Botón Loading
+    // Feedback visual en botón
     const btn = event.target.querySelector('button[type="submit"]');
     const originalText = btn.innerHTML;
     btn.disabled = true;
@@ -356,13 +390,8 @@ async function saveGarantia(event) {
 
     try {
         let endpoint = 'includes/garantias.php';
-        // Si estamos editando, podrías necesitar pasar el ID en la URL o en el payload
-        // Según tu PHP simple, asumo POST crea. Si tuvieras PUT, úsalo aquí.
-        // Para este ejemplo, si es edición, asumimos que el backend maneja actualización si recibe ID
-        // Ojo: Tu PHP actual (garantias.php) solo tenía CREATE. Deberías agregar UPDATE en PHP si lo necesitas.
-        
-        // Si el PHP no soporta edición, esto creará una nueva.
-        // Simularemos envío estándar.
+        // Nota: Asumimos POST para crear. Si tu backend soporta PUT para editar, 
+        // deberías cambiar el método aquí si 'id' existe.
         
         const result = await apiCall(endpoint, 'POST', payload);
 
@@ -386,8 +415,5 @@ async function deleteGarantia(id) {
     if (!confirm('¿Estás seguro de eliminar esta garantía? Si está vinculada a un crédito activo, esto podría causar errores.')) {
         return;
     }
-    
-    // Nota: Necesitas implementar DELETE en tu PHP
-    // await apiCall(`includes/garantias.php?id=${id}`, 'DELETE');
     alert('Funcionalidad de eliminar pendiente de implementación en backend.');
 }
