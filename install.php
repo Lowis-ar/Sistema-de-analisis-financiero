@@ -15,6 +15,22 @@ try {
     // 2. Crear base de datos si no existe
     $conn->exec("CREATE DATABASE IF NOT EXISTS $dbname CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
     $conn->exec("USE $dbname");
+
+    // ---------------------------------------------------------
+    // BLOQUE 0: TABLA USUARIOS 
+    // ---------------------------------------------------------
+    
+    // Crear tabla usuarios 
+    $conn->exec("CREATE TABLE IF NOT EXISTS usuarios (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        activo TINYINT(1) DEFAULT 1 COMMENT '1=activo, 0=inactivo',
+        rol VARCHAR(20) DEFAULT 'usuario' COMMENT 'admin, usuario',
+        fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB");
+
     
     // ---------------------------------------------------------
     // BLOQUE 1: TABLAS BASE (Existentes)
@@ -329,6 +345,23 @@ try {
 
     echo "<p style='color: green;'>✅ Base de datos, tablas base y módulos de garantías (naturales y jurídicas) creados exitosamente!</p>";
     echo "<p>Ahora puedes acceder al sistema en <a href='index.php'>index.php</a></p>";
+
+
+    // Verificar si la tabla usuarios está vacía para insertar usuario admin por defecto
+    $stmt = $conn->query("SELECT COUNT(*) FROM usuarios");
+    if ($stmt->fetchColumn() == 0) {
+        $admin_pass = password_hash('admin123', PASSWORD_DEFAULT);
+        $sql = "INSERT INTO usuarios (nombre, email, password, rol) VALUES 
+                ('Administrador', 'admin@financiera.com', '$admin_pass', 'admin'),
+                ('Usuario Demo', 'usuario@financiera.com', '$admin_pass', 'usuario')";
+        $conn->exec($sql);
+        echo "<p style='color: blue;'>ℹ️ Usuarios por defecto creados.</p>";
+        echo "<p style='color: orange;'>⚠️ Credenciales por defecto:</p>";
+        echo "<ul style='color: orange;'>";
+        echo "<li>Admin: admin@financiera.com / admin123</li>";
+        echo "<li>Usuario: usuario@financiera.com / admin123</li>";
+        echo "</ul>";
+    }
     
     // ---------------------------------------------------------
     // BLOQUE 5: CREAR VISTAS ÚTILES
