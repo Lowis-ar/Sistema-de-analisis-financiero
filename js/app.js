@@ -114,6 +114,10 @@ function renderCurrentTab() {
             if(typeof loadActivosModule === 'function') loadActivosModule();
             else console.error('Falta activos.js');
             break;
+        case 'usuarios':
+            if(typeof loadUsuariosModule === 'function') loadUsuariosModule();
+            else console.error('Falta usuarios.js');
+            break;
         default:
             loadDashboard();
     }
