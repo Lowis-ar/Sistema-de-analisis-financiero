@@ -227,7 +227,7 @@ async function savePrestamo(event) {
     const result = await apiCall('prestamos.php', 'POST', formData);
     
     if (result && result.success) {
-        showModal('Éxito', `${result.message}<br>Cuota mensual: ${formatCurrency(result.cuota)}`);
+        showModal('Éxito', `${result.message} Cuota mensual: ${formatCurrency(result.cuota)}`);
         prestamosView = 'list';
         loadPrestamos();
     } else {
