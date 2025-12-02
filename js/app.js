@@ -86,6 +86,9 @@ function renderCurrentTab() {
         case 'creditos':
             loadPrestamosModule();
             break;
+        case 'garantias': // NUEVO MÓDULO
+            loadGarantiasModule();
+            break;
         case 'activos':
             loadActivosModule();
             break;
@@ -94,7 +97,9 @@ function renderCurrentTab() {
     }
 }
 
-// Módulo Dashboard
+// ==========================================
+// MÓDULO DASHBOARD
+// ==========================================
 function loadDashboard() {
     const content = `
         <div class="space-y-6">
@@ -128,18 +133,18 @@ function loadDashboard() {
                 <div class="card border-l-4 border-green-500">
                     <div class="flex justify-between items-start">
                         <div>
-                            <p class="text-sm font-medium text-gray-500 uppercase">Activos Netos</p>
-                            <h3 class="text-3xl font-bold text-gray-900 mt-2">$0.00</h3>
+                            <p class="text-sm font-medium text-gray-500 uppercase">Garantías Registradas</p>
+                            <h3 class="text-3xl font-bold text-gray-900 mt-2">0</h3>
                         </div>
                         <div class="p-2 bg-green-50 rounded-lg">
-                            <i class="fas fa-building text-green-600"></i>
+                            <i class="fas fa-shield-alt text-green-600"></i>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="bg-blue-50 p-4 rounded-lg">
-                <p class="text-blue-800">Sistema Financiero - Versión MySQL</p>
+                <p class="text-blue-800 font-medium">Sistema Financiero - Clientes Jurídicos & Garantías Activas</p>
             </div>
         </div>
     `;
@@ -147,7 +152,9 @@ function loadDashboard() {
     document.getElementById('main-content').innerHTML = content;
 }
 
-// Módulo Clientes
+// ==========================================
+// MÓDULO CLIENTES (Actualizado para Jurídicos)
+// ==========================================
 function loadClientesModule() {
     const content = `
         <div class="space-y-6">
@@ -160,13 +167,10 @@ function loadClientesModule() {
 
             <div id="clientesContent">
                 <div class="card">
-                    <h3 class="text-lg font-bold mb-4">Lista de Clientes</h3>
+                    <h3 class="text-lg font-bold mb-4">Cartera de Clientes</h3>
                     <div class="text-center py-8 text-gray-500">
                         <i class="fas fa-users text-4xl mb-4 text-gray-300"></i>
                         <p>No hay clientes registrados</p>
-                        <button id="btnAgregarCliente" class="btn btn-primary mt-4">
-                            <i class="fas fa-plus mr-2"></i> Agregar Primer Cliente
-                        </button>
                     </div>
                 </div>
             </div>
@@ -174,55 +178,83 @@ function loadClientesModule() {
     `;
     
     document.getElementById('main-content').innerHTML = content;
-    
-    // Agregar event listeners para los botones de clientes
     document.getElementById('btnNuevoCliente')?.addEventListener('click', showClienteForm);
-    document.getElementById('btnAgregarCliente')?.addEventListener('click', showClienteForm);
 }
-/*
+
 function showClienteForm() {
     const content = `
         <div class="card">
             <h3 class="text-lg font-bold mb-4">Registrar Nuevo Cliente</h3>
             <form id="formCliente" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="input-group">
-                        <label>Tipo de Persona</label>
-                        <select class="w-full p-2 border rounded">
-                            <option value="natural">Persona Natural</option>
-                            <option value="juridica">Persona Jurídica</option>
-                        </select>
-                    </div>
-
-                    <div class="input-group">
-                        <label>Código Cliente</label>
-                        <input type="text" class="w-full p-2 border rounded" placeholder="CLI-001">
-                    </div>
-
-                    <div class="input-group">
-                        <label>Nombre Completo</label>
-                        <input type="text" class="w-full p-2 border rounded" placeholder="Nombre del cliente">
-                    </div>
-
-                    <div class="input-group">
-                        <label>DUI</label>
-                        <input type="text" class="w-full p-2 border rounded" placeholder="00000000-0">
-                    </div>
-
-                    <div class="input-group">
-                        <label>Teléfono</label>
-                        <input type="text" class="w-full p-2 border rounded" placeholder="2222-2222">
-                    </div>
-
-                    <div class="input-group">
-                        <label>Ingresos Mensuales ($)</label>
-                        <input type="number" class="w-full p-2 border rounded" value="0">
+                
+                <div class="bg-gray-50 p-4 rounded mb-4">
+                    <label class="block font-bold mb-2">Tipo de Cliente</label>
+                    <div class="flex gap-4">
+                        <label class="inline-flex items-center">
+                            <input type="radio" name="tipo_cliente" value="natural" checked class="form-radio text-blue-600">
+                            <span class="ml-2">Persona Natural</span>
+                        </label>
+                        <label class="inline-flex items-center">
+                            <input type="radio" name="tipo_cliente" value="juridico" class="form-radio text-blue-600">
+                            <span class="ml-2">Persona Jurídica (Empresa)</span>
+                        </label>
                     </div>
                 </div>
 
-                <div class="input-group">
-                    <label>Dirección</label>
-                    <textarea class="w-full p-2 border rounded" rows="3"></textarea>
+                <div id="camposNatural" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="input-group">
+                        <label>Nombre Completo</label>
+                        <input type="text" name="nombre" class="w-full p-2 border rounded" placeholder="Juan Perez">
+                    </div>
+                    <div class="input-group">
+                        <label>DUI</label>
+                        <input type="text" name="dui" class="w-full p-2 border rounded" placeholder="00000000-0">
+                    </div>
+                    <div class="input-group">
+                        <label>Ingresos Mensuales</label>
+                        <input type="number" name="ingresos" class="w-full p-2 border rounded" value="0">
+                    </div>
+                </div>
+
+                <div id="camposJuridico" class="grid grid-cols-1 md:grid-cols-2 gap-4 hidden">
+                    <div class="input-group md:col-span-2">
+                        <label>Razón Social (Nombre Legal)</label>
+                        <input type="text" name="razon_social" class="w-full p-2 border rounded" placeholder="Ej: Industrias S.A. de C.V.">
+                    </div>
+                    <div class="input-group">
+                        <label>Nombre Comercial</label>
+                        <input type="text" name="nombre_comercial" class="w-full p-2 border rounded">
+                    </div>
+                    <div class="input-group">
+                        <label>NIT Empresa</label>
+                        <input type="text" name="nit" class="w-full p-2 border rounded" placeholder="0614-000000-000-0">
+                    </div>
+                    <div class="input-group">
+                        <label>NRC (Registro IVA)</label>
+                        <input type="text" name="nrc" class="w-full p-2 border rounded">
+                    </div>
+                    <div class="input-group">
+                        <label>Giro Económico</label>
+                        <input type="text" name="giro" class="w-full p-2 border rounded">
+                    </div>
+                    <div class="input-group md:col-span-2 border-t pt-2 mt-2">
+                        <p class="font-bold text-sm text-gray-600 mb-2">Representante Legal</p>
+                        <div class="grid grid-cols-2 gap-4">
+                            <input type="text" name="representante" class="w-full p-2 border rounded" placeholder="Nombre Representante">
+                            <input type="text" name="dui_representante" class="w-full p-2 border rounded" placeholder="DUI Representante">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+                    <div class="input-group">
+                        <label>Teléfono Contacto</label>
+                        <input type="text" name="telefono" class="w-full p-2 border rounded">
+                    </div>
+                    <div class="input-group">
+                        <label>Dirección Física</label>
+                        <input type="text" name="direccion" class="w-full p-2 border rounded">
+                    </div>
                 </div>
 
                 <div class="flex gap-4 pt-4">
@@ -239,23 +271,153 @@ function showClienteForm() {
     
     document.getElementById('clientesContent').innerHTML = content;
     
-    // Event listeners para el formulario
+    // Lógica para mostrar/ocultar campos según tipo
+    const radios = document.getElementsByName('tipo_cliente');
+    const divNatural = document.getElementById('camposNatural');
+    const divJuridico = document.getElementById('camposJuridico');
+
+    radios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            if (this.value === 'juridico') {
+                divNatural.classList.add('hidden');
+                divJuridico.classList.remove('hidden');
+            } else {
+                divNatural.classList.remove('hidden');
+                divJuridico.classList.add('hidden');
+            }
+        });
+    });
+
+    document.getElementById('btnCancelarCliente')?.addEventListener('click', loadClientesModule);
     document.getElementById('formCliente')?.addEventListener('submit', function(e) {
         e.preventDefault();
-        guardarCliente();
-    });
-    
-    document.getElementById('btnCancelarCliente')?.addEventListener('click', function() {
+        // Aquí iría la lógica fetch hacia api/includes/clientes_juridicos.php
+        alert('Guardando cliente (Lógica pendiente de integración API)...');
         loadClientesModule();
     });
 }
-*/
-function guardarCliente() {
-    alert('Cliente guardado exitosamente!');
-    loadClientesModule();
+
+// ==========================================
+// NUEVO MÓDULO: GARANTÍAS
+// ==========================================
+function loadGarantiasModule() {
+    const content = `
+        <div class="space-y-6">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-800">Garantías Mobiliarias</h2>
+                    <p class="text-sm text-gray-500">Gestión de Prendas, Inventarios y Cesiones</p>
+                </div>
+                <button id="btnNuevaGarantia" class="btn btn-primary">
+                    <i class="fas fa-shield-alt mr-2"></i> Registrar Garantía
+                </button>
+            </div>
+
+            <div class="flex gap-4 border-b">
+                <button class="px-4 py-2 border-b-2 border-blue-600 text-blue-600 font-bold">Activas</button>
+                <button class="px-4 py-2 text-gray-500 hover:text-blue-600">Por Vencer (Seguros)</button>
+                <button class="px-4 py-2 text-gray-500 hover:text-blue-600">Requieren Avalúo</button>
+            </div>
+
+            <div id="garantiasContent">
+                <div class="card">
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-file-contract text-4xl mb-4 text-gray-300"></i>
+                        <p>Seleccione una opción para gestionar garantías</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('main-content').innerHTML = content;
+    document.getElementById('btnNuevaGarantia')?.addEventListener('click', showGarantiaForm);
 }
 
-// Módulo Préstamos
+function showGarantiaForm() {
+    const content = `
+        <div class="card">
+            <h3 class="text-lg font-bold mb-4">Registrar Garantía (Ley de Garantías Mobiliarias)</h3>
+            <form id="formGarantia" class="space-y-4">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="input-group">
+                        <label>Cliente Propietario</label>
+                        <select class="w-full p-2 border rounded" name="cliente_id">
+                            <option value="">Seleccione Cliente...</option>
+                            <option value="1">Juan Perez (Natural)</option>
+                            <option value="2">Industrias La Constancia (Jurídico)</option>
+                        </select>
+                    </div>
+
+                    <div class="input-group">
+                        <label>Tipo de Garantía</label>
+                        <select class="w-full p-2 border rounded" name="tipo_garantia">
+                            <option value="1">Prenda sin Desplazamiento (Maquinaria/Vehículo)</option>
+                            <option value="2">Inventario Rotatorio</option>
+                            <option value="3">Cesión de Derechos (Facturas)</option>
+                            <option value="4">Pignoración de Acciones</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>Descripción Técnica del Bien</label>
+                    <textarea class="w-full p-2 border rounded" rows="2" placeholder="Ej: Tractor Marca CAT, Modelo D5, Serie 998877..."></textarea>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="input-group">
+                        <label>Valor Comercial (Avalúo)</label>
+                        <div class="relative">
+                            <span class="absolute left-3 top-2 text-gray-500">$</span>
+                            <input type="number" class="w-full p-2 pl-6 border rounded" placeholder="0.00">
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label>Folio RUG (CNR)</label>
+                        <input type="text" class="w-full p-2 border rounded" placeholder="Registro Garantías">
+                    </div>
+                    <div class="input-group">
+                        <label>Fecha Inscripción</label>
+                        <input type="date" class="w-full p-2 border rounded">
+                    </div>
+                </div>
+
+                <div class="bg-yellow-50 p-4 rounded border border-yellow-200 mt-4">
+                    <h4 class="font-bold text-yellow-800 text-sm mb-2"><i class="fas fa-exclamation-circle"></i> Póliza de Seguro (Obligatorio)</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <input type="text" placeholder="Aseguradora" class="w-full p-2 border rounded bg-white">
+                        <input type="text" placeholder="No. Póliza" class="w-full p-2 border rounded bg-white">
+                        <input type="date" title="Fecha Vencimiento" class="w-full p-2 border rounded bg-white">
+                    </div>
+                </div>
+
+                <div class="flex gap-4 pt-4">
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save mr-2"></i> Guardar Garantía
+                    </button>
+                    <button type="button" id="btnCancelarGarantia" class="btn btn-secondary">
+                        <i class="fas fa-times mr-2"></i> Cancelar
+                    </button>
+                </div>
+            </form>
+        </div>
+    `;
+    
+    document.getElementById('garantiasContent').innerHTML = content;
+    
+    document.getElementById('btnCancelarGarantia')?.addEventListener('click', loadGarantiasModule);
+    document.getElementById('formGarantia')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        alert('Enviando datos a api/includes/garantias.php...');
+        loadGarantiasModule();
+    });
+}
+
+// ==========================================
+// MÓDULO CRÉDITOS
+// ==========================================
 function loadPrestamosModule() {
     const content = `
         <div class="space-y-6">
@@ -279,11 +441,13 @@ function loadPrestamosModule() {
     document.getElementById('main-content').innerHTML = content;
     
     document.getElementById('btnNuevoPrestamo')?.addEventListener('click', function() {
-        alert('Formulario de nuevo préstamo');
+        alert('Aquí iría el formulario de préstamos vinculando garantías...');
     });
 }
 
-// Módulo Activos
+// ==========================================
+// MÓDULO ACTIVOS
+// ==========================================
 function loadActivosModule() {
     const content = `
         <div class="space-y-6">
