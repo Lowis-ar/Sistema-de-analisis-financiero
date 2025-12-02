@@ -231,7 +231,7 @@ try {
     echo "<li>✅ garantias_seguros</li>";
     echo "<li>✅ garantias_avaluos</li>";
     echo "</ul>";
-    echo "<p>Ahora puedes acceder al sistema en <a href='../login/login.php'>login.php</a></p>";
+    echo "<p>Ahora puedes acceder al sistema en <a href='../Sistema-de-analisis-financiero/login/login.php'>Iniciar sesión</a></p>";
     
 } catch(PDOException $e) {
     echo "<p style='color: red;'>❌ Error: " . $e->getMessage() . "</p>";
