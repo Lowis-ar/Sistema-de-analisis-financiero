@@ -1,11 +1,29 @@
 const VALIDATORS = {
     dui: (val) => /^\d{8}-\d{1}$/.test(val),
     telefono: (val) => /^\d{4}-\d{4}$/.test(val),
-    nit: (val) => /^\d{4}-\d{6}-\d{3}-\d{1}$/.test(val)
+    nit: (val) => /^\d{4}-\d{6}-\d{3}-\d{1}$/.test(val),
+    // AGREGADO: Validación para NRC (Registro de Contribuyente - Empresas)
+    nrc: (val) => /^\d{2,8}$/.test(val),
+    // AGREGADO: Validación básica para Folio RUG (Registro Garantías)
+    rug: (val) => /^[A-Z0-9-]{4,20}$/i.test(val)
 };
 
 function formatCurrency(amount) {
     return new Intl.NumberFormat('es-SV', { style: 'currency', currency: 'USD' }).format(amount);
+}
+
+// AGREGADO: Formateador de NIT automático (0000-000000-000-0)
+function formatNIT(value) {
+    // Elimina todo lo que no sea número
+    const v = value.replace(/\D/g, '').substring(0, 14);
+    const parts = [];
+
+    if (v.length > 0) parts.push(v.substring(0, 4));
+    if (v.length > 4) parts.push(v.substring(4, 10));
+    if (v.length > 10) parts.push(v.substring(10, 13));
+    if (v.length > 13) parts.push(v.substring(13, 14));
+
+    return parts.join('-');
 }
 
 function generarCodigoActivo(inst, unidad, tipo, correlativo) {
@@ -16,6 +34,25 @@ function calcularCuota(monto, tasaAnual, plazoMeses) {
     if (!monto || !tasaAnual || !plazoMeses) return 0;
     const tasaMensual = (tasaAnual / 100) / 12;
     return (monto * tasaMensual) / (1 - Math.pow(1 + tasaMensual, -plazoMeses));
+}
+
+// AGREGADO: Calcula la cobertura de la garantía vs el préstamo (LTV)
+function calcularCoberturaGarantia(valorGarantia, montoPrestamo) {
+    if (!montoPrestamo || montoPrestamo === 0) return 0;
+    return (valorGarantia / montoPrestamo) * 100;
+}
+
+// AGREGADO: Calcula días restantes para vencimiento (Seguros/Avalúos)
+function calcularDiasRestantes(fechaVencimiento) {
+    const hoy = new Date();
+    const vencimiento = new Date(fechaVencimiento);
+    
+    if (isNaN(vencimiento.getTime())) return null;
+
+    const diffTime = vencimiento - hoy;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+    
+    return diffDays; // Si es negativo, ya venció
 }
 
 function calcularDepreciacionActual(activo) {
@@ -49,13 +86,26 @@ function createButton({ onClick, children, variant = "primary", className = "", 
     const variants = {
         primary: "btn-primary",
         secondary: "btn-secondary",
-        danger: "btn-danger",
+        danger: "btn-danger", // Usar bg-red-600 en CSS
         success: "btn-success"
     };
     
     return `<button type="${type}" onclick="${onClick}" ${disabled ? 'disabled' : ''} class="${baseStyle} ${variants[variant]} ${className}">
         ${children}
     </button>`;
+}
+
+// AGREGADO: Generador de Badges (Etiquetas) para Estados de Garantía
+function getBadgeEstado(estado) {
+    const estilos = {
+        'tramite': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+        'vigente': 'bg-green-100 text-green-800 border-green-200',
+        'deteriorada': 'bg-red-100 text-red-800 border-red-200',
+        'ejecucion': 'bg-orange-100 text-orange-800 border-orange-200',
+        'liberada': 'bg-gray-100 text-gray-800 border-gray-200'
+    };
+    const clase = estilos[estado] || 'bg-gray-100 text-gray-800';
+    return `<span class="px-2 py-1 text-xs font-semibold rounded-full border ${clase}">${estado.toUpperCase()}</span>`;
 }
 
 function createInputGroup({ label, error, children }) {
@@ -91,17 +141,17 @@ function showNotification(message, type = 'info') {
         type === 'error' ? 'bg-red-500 text-white' : 
         type === 'success' ? 'bg-green-500 text-white' : 
         'bg-blue-500 text-white'
-    } z-50`;
+    } z-50 transition-opacity duration-300`;
     notification.textContent = message;
     
     document.body.appendChild(notification);
     
     setTimeout(() => {
-        notification.remove();
+        notification.style.opacity = '0';
+        setTimeout(() => notification.remove(), 300);
     }, 3000);
 }
 
-// Añade esto al final de utils.js
 function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
@@ -119,4 +169,10 @@ window.setActiveTab = setActiveTab;
 window.toggleClientesView = toggleClientesView;
 window.updateClienteFormData = updateClienteFormData;
 window.handleClienteSubmit = handleClienteSubmit;
-// Añade aquí las otras funciones que necesites exponer globalmente
+
+// AGREGADO: Exponer las nuevas funciones al objeto window
+window.formatNIT = formatNIT;
+window.calcularCoberturaGarantia = calcularCoberturaGarantia;
+window.calcularDiasRestantes = calcularDiasRestantes;
+window.getBadgeEstado = getBadgeEstado;
+window.VALIDATORS = VALIDATORS; // Exponer validadores actualizados
