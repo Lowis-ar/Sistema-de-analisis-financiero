@@ -2,6 +2,14 @@ let clientesView = 'list';
 let clientesCount = 0;
 let editingClienteId = null;
 
+// Expresiones Regulares para validaciones locales
+const CLIENTE_VALIDATORS = {
+    dui: (val) => /^\d{8}-\d{1}$/.test(val),
+    nit: (val) => /^\d{4}-\d{6}-\d{3}-\d{1}$/.test(val),
+    telefono: (val) => /^\d{4}-\d{4}$/.test(val),
+    nrc: (val) => /^\d{2,8}$/.test(val)
+};
+
 // Función para cargar el contador de clientes
 async function loadClientesCount() {
     try {
@@ -19,6 +27,7 @@ async function loadClientesCount() {
 // Función para generar código de cliente automático
 function generarCodigoCliente() {
     const nuevoNumero = clientesCount + 1;
+    // Prefijo CLI para Naturales, EMP para Jurídicos (opcional, aquí usamos CLI genérico)
     return `CLI${String(nuevoNumero).padStart(3, '0')}`;
 }
 
@@ -93,32 +102,43 @@ function renderClientesList(clientes) {
         </div>
     `;
 
-    const clientesHTML = clientes.map(cliente => `
-        <div class="card border-l-4 border-blue-500 hover:shadow-lg transition-shadow cursor-pointer" 
+    const clientesHTML = clientes.map(cliente => {
+        const isJuridico = cliente.tipo === 'juridico' || cliente.tipo === 'JURIDICO';
+        // Mapear campos visuales
+        const nombreDisplay = cliente.nombre || cliente.razon_social;
+        const docDisplay = cliente.dui || cliente.nit;
+        const tipoLabel = isJuridico ? 'Persona Jurídica' : 'Persona Natural';
+        const icon = isJuridico ? 'fa-building' : 'fa-user';
+
+        return `
+        <div class="card border-l-4 ${isJuridico ? 'border-purple-500' : 'border-blue-500'} hover:shadow-lg transition-shadow cursor-pointer" 
              onclick="showEditClienteForm(${cliente.id})">
             <div class="flex justify-between items-start">
                 <div>
-                    <h3 class="font-bold text-lg">${cliente.nombre}</h3>
-                    <p class="text-sm text-gray-500">${cliente.codigo} • ${cliente.tipo === 'natural' ? 'Persona Natural' : 'Persona Jurídica'}</p>
+                    <div class="flex items-center gap-2">
+                        <i class="fas ${icon} text-gray-400"></i>
+                        <h3 class="font-bold text-lg">${nombreDisplay}</h3>
+                    </div>
+                    <p class="text-sm text-gray-500">${cliente.codigo} • ${tipoLabel}</p>
                 </div>
                 <div class="flex items-center space-x-2">
                     <span class="px-3 py-1 rounded-full text-sm font-bold ${cliente.calificacion === 'A' ? 'bg-green-100 text-green-800' :
                         cliente.calificacion === 'B' ? 'bg-yellow-100 text-yellow-800' : 
                         cliente.calificacion === 'C' ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'}">
-                        ${cliente.calificacion}
+                        ${cliente.calificacion || 'A'}
                     </span>
-                    <button onclick="event.stopPropagation(); deleteCliente(${cliente.id}, '${cliente.nombre}')" 
+                    <button onclick="event.stopPropagation(); deleteCliente(${cliente.id}, '${nombreDisplay}')" 
                             class="text-red-500 hover:text-red-700 p-1">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
             </div>
             <div class="mt-4 grid grid-cols-2 gap-2 text-sm">
-                <div><span class="font-medium">DUI/NIT:</span> ${cliente.dui || 'N/A'}</div>
+                <div><span class="font-medium">${isJuridico ? 'NIT:' : 'DUI:'}</span> ${docDisplay || 'N/A'}</div>
                 <div><span class="font-medium">Teléfono:</span> ${cliente.telefono || 'N/A'}</div>
+                ${isJuridico ? `<div><span class="font-medium">NRC:</span> ${cliente.nrc || 'N/A'}</div>` : ''}
                 <div><span class="font-medium">Ingresos:</span> ${formatCurrency(cliente.ingresos)}</div>
-                <div><span class="font-medium">Egresos:</span> ${formatCurrency(cliente.egresos)}</div>
-                <div class="col-span-2">
+                <div class="col-span-2 mt-2 pt-2 border-t">
                     <span class="font-medium">Capacidad de pago:</span>
                     <span class="font-bold ${cliente.capacidad_pago >= 0 ? 'text-green-600' : 'text-red-600'}">
                         ${formatCurrency(cliente.capacidad_pago)}
@@ -126,7 +146,7 @@ function renderClientesList(clientes) {
                 </div>
             </div>
         </div>
-    `).join('');
+    `}).join('');
 
     return `
         ${headerHTML}
@@ -138,58 +158,54 @@ function renderClientesList(clientes) {
 
 async function showNewClienteForm() {
     showLoading();
-
-    // Cargar el contador de clientes
     await loadClientesCount();
-
     clientesView = 'form';
     editingClienteId = null;
 
-    // Mostrar el formulario después de cargar el contador
     setTimeout(() => {
         const content = `
             <div class="space-y-6">
                 <div class="flex justify-between items-center">
-                    <h2 class="text-2xl font-bold text-gray-800">Gestión de Clientes</h2>
+                    <h2 class="text-2xl font-bold text-gray-800">Nuevo Cliente</h2>
                     <button onclick="cancelNewCliente()" class="btn btn-secondary">
                         <i class="fas fa-times mr-2"></i> Cancelar
                     </button>
                 </div>
-                
-                ${renderNewClienteForm()}
+                ${renderFormulario()}
             </div>
         `;
         document.getElementById('main-content').innerHTML = content;
+        // Inicializar estado del formulario
+        toggleClienteFields(); 
     }, 100);
 }
 
-// Función para mostrar formulario de edición
 async function showEditClienteForm(clienteId) {
     showLoading();
-    
     try {
-        // Obtener datos del cliente específico
         const cliente = await apiCall(`clientes.php?id=${clienteId}`);
         
         if (cliente && !cliente.error) {
             editingClienteId = clienteId;
             clientesView = 'form';
             
-            // Mostrar formulario con datos
             setTimeout(() => {
                 const content = `
                     <div class="space-y-6">
                         <div class="flex justify-between items-center">
-                            <h2 class="text-2xl font-bold text-gray-800">Gestión de Clientes</h2>
+                            <h2 class="text-2xl font-bold text-gray-800">Editar Cliente</h2>
                             <button onclick="cancelNewCliente()" class="btn btn-secondary">
                                 <i class="fas fa-times mr-2"></i> Cancelar
                             </button>
                         </div>
-                        
-                        ${renderEditClienteForm(cliente)}
+                        ${renderFormulario(cliente)}
                     </div>
                 `;
                 document.getElementById('main-content').innerHTML = content;
+                // Inicializar estado del formulario con datos cargados
+                toggleClienteFields();
+                // Actualizar cálculos
+                updateClienteFormCalculos();
             }, 100);
         } else {
             showModal('Error', 'No se pudo cargar el cliente para editar');
@@ -202,513 +218,235 @@ async function showEditClienteForm(clienteId) {
     }
 }
 
-function renderNewClienteForm() {
-    const codigoGenerado = generarCodigoCliente();
-
+// Función unificada para renderizar el formulario (Nuevo y Edición)
+function renderFormulario(cliente = null) {
+    const codigo = cliente ? cliente.codigo : generarCodigoCliente();
+    const tipo = cliente ? (cliente.tipo === 'JURIDICO' ? 'juridica' : cliente.tipo) : 'natural';
+    
+    // Mapeo de valores
+    const nombreVal = cliente ? (cliente.nombre || cliente.razon_social || '') : '';
+    const docVal = cliente ? (cliente.dui || cliente.nit || '') : '';
+    
     return `
         <div class="card">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-xl font-bold">Nuevo Cliente</h3>
-                <button onclick="cancelNewCliente()" class="btn btn-secondary">
-                    <i class="fas fa-times mr-2"></i> Cancelar
-                </button>
-            </div>
-            
             <form id="formCliente" onsubmit="saveCliente(event)">
+                <input type="hidden" id="clienteId" value="${cliente ? cliente.id : ''}">
+                
+                <div class="bg-gray-50 p-4 rounded-lg mb-6 border border-gray-200">
+                    <label class="block font-bold mb-2 text-gray-700">Tipo de Cliente</label>
+                    <div class="flex gap-6">
+                        <label class="inline-flex items-center cursor-pointer">
+                            <input type="radio" name="tipo_cliente" value="natural" 
+                                ${tipo === 'natural' ? 'checked' : ''} 
+                                onchange="toggleClienteFields()"
+                                class="form-radio text-blue-600 h-5 w-5">
+                            <span class="ml-2">Persona Natural</span>
+                        </label>
+                        <label class="inline-flex items-center cursor-pointer">
+                            <input type="radio" name="tipo_cliente" value="juridica" 
+                                ${tipo === 'juridica' ? 'checked' : ''} 
+                                onchange="toggleClienteFields()"
+                                class="form-radio text-blue-600 h-5 w-5">
+                            <span class="ml-2">Persona Jurídica (Empresa)</span>
+                        </label>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="input-group">
-                        <label for="tipo">Tipo de Persona *</label>
-                        <select id="tipo" class="w-full p-2 border rounded" required onchange="updateClienteForm()">
-                            <option value="natural">Persona Natural</option>
-                            <option value="juridica">Persona Jurídica</option>
-                        </select>
+                        <label>Código Cliente</label>
+                        <input type="text" id="codigo" class="w-full p-2 border rounded bg-gray-100" 
+                               required readonly value="${codigo}">
                     </div>
-                    
-                    <div class="input-group">
-                        <label for="codigo">Código Cliente *</label>
-                        <input type="text" id="codigo" class="w-full p-2 border rounded bg-gray-50" 
-                               required readonly value="${codigoGenerado}">
-                        <div class="text-xs mt-1 text-gray-500">
-                            Código generado automáticamente
-                        </div>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="nombre">Nombre Completo *</label>
-                        <input type="text" id="nombre" class="w-full p-2 border rounded" required
-                            oninput="validateNombreInput(this)"
-                            onkeypress="return allowOnlyLetters(event)"
-                            placeholder="Ej: Juan Pérez Rodríguez">
-                        <div class="text-xs mt-1 text-gray-500" id="nombre-hint">
-                            Solo letras, espacios y algunos caracteres especiales (ñ, á, é, í, ó, ú)
-                        </div>
-                    </div>
-                                        
-                    <div class="input-group">
-                        <label for="dui" id="label-dui">DUI (Ej: 00000000-0)</label>
-                        <input type="text" id="dui" class="w-full p-2 border rounded" placeholder="00000000-0"
-                               oninput="formatDuiInput(this)"
-                               onkeydown="handleDuiKeydown(event, this)">
-                        <div class="text-xs mt-1 text-gray-500" id="dui-hint">
-                            Formato: 00000000-0
-                        </div>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="telefono">Teléfono</label>
-                        <input type="text" id="telefono" class="w-full p-2 border rounded" placeholder="2222-2222"
-                               oninput="formatTelefonoInput(this)"
-                               onkeydown="handleTelefonoKeydown(event, this)">
-                        <div class="text-xs mt-1 text-gray-500" id="telefono-hint">
-                            Formato: 2222-2222
-                        </div>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="ingresos">Ingresos Mensuales ($)</label>
-                        <input type="number" id="ingresos" class="w-full p-2 border rounded" value="0" step="0.01" onchange="updateClienteForm()">
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="egresos">Egresos Mensuales ($)</label>
-                        <input type="number" id="egresos" class="w-full p-2 border rounded" value="0" step="0.01" onchange="updateClienteForm()">
-                    </div>
-                </div>
-                
-                <div class="input-group mt-4">
-                    <label for="direccion">Dirección</label>
-                    <textarea id="direccion" class="w-full p-2 border rounded" rows="3"></textarea>
-                </div>
-                
-                <div class="mt-6 p-4 bg-blue-50 rounded-lg">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="text-sm text-blue-800">Capacidad de Pago Estimada</p>
-                            <p id="capacidad-pago" class="text-2xl font-bold text-blue-900">$0.00</p>
-                        </div>
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-save mr-2"></i> Guardar Cliente
-                        </button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    `;
-}
 
-// Función para renderizar formulario de edición
-function renderEditClienteForm(cliente) {
-    return `
-        <div class="card">
-            <div class="flex justify-between items-center mb-6">
-                <h3 class="text-xl font-bold">Editar Cliente</h3>
-                <div class="flex space-x-2">
-                    <button onclick="cancelNewCliente()" class="btn btn-secondary">
+                    <div class="input-group md:col-span-2">
+                        <label id="lbl-nombre">Nombre Completo *</label>
+                        <input type="text" id="nombre" class="w-full p-2 border rounded" required
+                               value="${nombreVal}"
+                               oninput="validateNombreInput(this)"
+                               placeholder="Ej: Juan Pérez">
+                        <div class="text-xs mt-1 text-gray-500" id="nombre-hint"></div>
+                    </div>
+
+                    <div class="input-group">
+                        <label id="lbl-documento">DUI *</label>
+                        <input type="text" id="documento" class="w-full p-2 border rounded" 
+                               value="${docVal}"
+                               oninput="formatDocumentoInput(this)"
+                               placeholder="00000000-0">
+                        <div class="text-xs mt-1 text-gray-500" id="documento-hint">Formato: 00000000-0</div>
+                    </div>
+
+                    <div class="juridico-field hidden input-group">
+                        <label>Nombre Comercial</label>
+                        <input type="text" id="nombre_comercial" class="w-full p-2 border rounded"
+                               value="${cliente?.nombre_comercial || ''}">
+                    </div>
+
+                    <div class="juridico-field hidden input-group">
+                        <label>NRC (Registro IVA) *</label>
+                        <input type="text" id="nrc" class="w-full p-2 border rounded"
+                               value="${cliente?.nrc || ''}" placeholder="Ej: 123456-7">
+                    </div>
+
+                    <div class="juridico-field hidden input-group">
+                        <label>Giro Económico</label>
+                        <input type="text" id="giro" class="w-full p-2 border rounded"
+                               value="${cliente?.giro_economico || ''}">
+                    </div>
+
+                    <div class="juridico-field hidden input-group md:col-span-2">
+                        <label>Representante Legal</label>
+                        <input type="text" id="representante" class="w-full p-2 border rounded"
+                               value="${cliente?.representante_legal || ''}">
+                    </div>
+
+                    <div class="input-group">
+                        <label>Teléfono *</label>
+                        <input type="text" id="telefono" class="w-full p-2 border rounded" 
+                               value="${cliente?.telefono || ''}"
+                               oninput="formatTelefonoInput(this)"
+                               placeholder="2222-2222">
+                    </div>
+
+                    <div class="input-group md:col-span-2">
+                        <label>Dirección</label>
+                        <textarea id="direccion" class="w-full p-2 border rounded" rows="2">${cliente?.direccion || ''}</textarea>
+                    </div>
+
+                    <div class="md:col-span-2 bg-blue-50 p-4 rounded border border-blue-200 mt-2">
+                        <h4 class="font-bold text-blue-800 mb-3">Análisis Financiero</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="input-group">
+                                <label>Ingresos Mensuales ($)</label>
+                                <input type="number" id="ingresos" class="w-full p-2 border rounded bg-white" 
+                                       value="${cliente?.ingresos || 0}" step="0.01" oninput="updateClienteFormCalculos()">
+                            </div>
+                            <div class="input-group">
+                                <label>Egresos Mensuales ($)</label>
+                                <input type="number" id="egresos" class="w-full p-2 border rounded bg-white" 
+                                       value="${cliente?.egresos || 0}" step="0.01" oninput="updateClienteFormCalculos()">
+                            </div>
+                            <div class="input-group text-center">
+                                <label class="text-xs text-gray-500 uppercase">Capacidad Neta</label>
+                                <div id="txtCapacidad" class="text-xl font-bold text-gray-800">$0.00</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex gap-4 pt-6 border-t mt-6">
+                    <button type="submit" class="btn btn-success flex-1">
+                        <i class="fas fa-save mr-2"></i> Guardar Cliente
+                    </button>
+                    <button type="button" onclick="cancelNewCliente()" class="btn btn-secondary flex-1">
                         <i class="fas fa-times mr-2"></i> Cancelar
                     </button>
-                    <button onclick="deleteCliente(${cliente.id}, '${escapeHtml(cliente.nombre)}')" class="btn btn-danger">
-                        <i class="fas fa-trash mr-2"></i> Eliminar
-                    </button>
-                </div>
-            </div>
-            
-            <form id="formCliente" onsubmit="saveCliente(event)">
-                <input type="hidden" id="clienteId" value="${cliente.id}">
-                <input type="hidden" id="codigoOriginal" value="${cliente.codigo}">
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="input-group">
-                        <label for="tipo">Tipo de Persona *</label>
-                        <select id="tipo" class="w-full p-2 border rounded" required onchange="updateClienteForm()">
-                            <option value="natural" ${cliente.tipo === 'natural' ? 'selected' : ''}>Persona Natural</option>
-                            <option value="juridica" ${cliente.tipo === 'juridica' ? 'selected' : ''}>Persona Jurídica</option>
-                        </select>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="codigo">Código Cliente *</label>
-                        <input type="text" id="codigo" class="w-full p-2 border rounded bg-gray-100" 
-                               required readonly value="${cliente.codigo}">
-                        <div class="text-xs mt-1 text-gray-500">
-                            Código no editable
-                        </div>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="nombre">Nombre Completo *</label>
-                        <input type="text" id="nombre" class="w-full p-2 border rounded" required
-                            oninput="validateNombreInput(this)"
-                            onkeypress="return allowOnlyLetters(event)"
-                            value="${escapeHtml(cliente.nombre)}"
-                            placeholder="Ej: Juan Pérez Rodríguez">
-                        <div class="text-xs mt-1 text-gray-500" id="nombre-hint">
-                            Solo letras, espacios y algunos caracteres especiales (ñ, á, é, í, ó, ú)
-                        </div>
-                    </div>
-                                        
-                    <div class="input-group">
-                        <label for="dui" id="label-dui">${cliente.tipo === 'natural' ? 'DUI (Ej: 00000000-0)' : 'NIT'}</label>
-                        <input type="text" id="dui" class="w-full p-2 border rounded" 
-                               value="${escapeHtml(cliente.dui || '')}"
-                               oninput="formatDuiInput(this)"
-                               onkeydown="handleDuiKeydown(event, this)"
-                               placeholder="${cliente.tipo === 'natural' ? '00000000-0' : '0614-161090-103-6'}">
-                        <div class="text-xs mt-1 text-gray-500" id="dui-hint">
-                            Formato: ${cliente.tipo === 'natural' ? '00000000-0' : 'XXXX-XXXXXX-XXX-X'}
-                        </div>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="telefono">Teléfono</label>
-                        <input type="text" id="telefono" class="w-full p-2 border rounded" 
-                               value="${escapeHtml(cliente.telefono || '')}"
-                               oninput="formatTelefonoInput(this)"
-                               onkeydown="handleTelefonoKeydown(event, this)"
-                               placeholder="2222-2222">
-                        <div class="text-xs mt-1 text-gray-500" id="telefono-hint">
-                            Formato: 2222-2222
-                        </div>
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="ingresos">Ingresos Mensuales ($)</label>
-                        <input type="number" id="ingresos" class="w-full p-2 border rounded" 
-                               value="${cliente.ingresos || 0}" 
-                               step="0.01" 
-                               onchange="updateClienteForm()">
-                    </div>
-                    
-                    <div class="input-group">
-                        <label for="egresos">Egresos Mensuales ($)</label>
-                        <input type="number" id="egresos" class="w-full p-2 border rounded" 
-                               value="${cliente.egresos || 0}" 
-                               step="0.01" 
-                               onchange="updateClienteForm()">
-                    </div>
-                </div>
-                
-                <div class="input-group mt-4">
-                    <label for="direccion">Dirección</label>
-                    <textarea id="direccion" class="w-full p-2 border rounded" rows="3">${escapeHtml(cliente.direccion || '')}</textarea>
-                </div>
-                
-                <div class="mt-6 p-4 bg-blue-50 rounded-lg">
-                    <div class="flex justify-between items-center">
-                        <div>
-                            <p class="text-sm text-blue-800">Capacidad de Pago Estimada</p>
-                            <p id="capacidad-pago" class="text-2xl font-bold text-blue-900">${formatCurrency(cliente.capacidad_pago || 0)}</p>
-                        </div>
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-save mr-2"></i> Actualizar Cliente
-                        </button>
-                    </div>
                 </div>
             </form>
         </div>
     `;
 }
 
-// Función para escapar HTML (seguridad)
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+// Lógica de interfaz: Mostrar/Ocultar campos
+function toggleClienteFields() {
+    const isJuridico = document.querySelector('input[name="tipo_cliente"][value="juridica"]').checked;
+    
+    // Elementos
+    const lblNombre = document.getElementById('lbl-nombre');
+    const lblDoc = document.getElementById('lbl-documento');
+    const inputDoc = document.getElementById('documento');
+    const fieldsJuridico = document.querySelectorAll('.juridico-field');
+    const inputNombre = document.getElementById('nombre');
+
+    if (isJuridico) {
+        // Modo Jurídico
+        lblNombre.textContent = 'Razón Social *';
+        inputNombre.placeholder = 'Ej: Industrias S.A. de C.V.';
+        
+        lblDoc.textContent = 'NIT *';
+        inputDoc.placeholder = '0614-161090-103-6';
+        document.getElementById('documento-hint').textContent = 'Formato: 0000-000000-000-0 (14 dígitos)';
+        
+        // Mostrar campos extra
+        fieldsJuridico.forEach(el => el.classList.remove('hidden'));
+    } else {
+        // Modo Natural
+        lblNombre.textContent = 'Nombre Completo *';
+        inputNombre.placeholder = 'Ej: Juan Pérez';
+        
+        lblDoc.textContent = 'DUI *';
+        inputDoc.placeholder = '00000000-0';
+        document.getElementById('documento-hint').textContent = 'Formato: 00000000-0 (9 dígitos)';
+        
+        // Ocultar campos extra
+        fieldsJuridico.forEach(el => el.classList.add('hidden'));
+    }
+}
+
+// Validaciones y Formatos
+function formatDocumentoInput(input) {
+    const isJuridico = document.querySelector('input[name="tipo_cliente"][value="juridica"]').checked;
+    let value = input.value.replace(/\D/g, ''); // Solo números
+
+    if (isJuridico) {
+        // Formato NIT: 0000-000000-000-0 (14 digitos)
+        value = value.slice(0, 14);
+        let formatted = '';
+        if (value.length > 0) formatted += value.substring(0, 4);
+        if (value.length > 4) formatted += '-' + value.substring(4, 10);
+        if (value.length > 10) formatted += '-' + value.substring(10, 13);
+        if (value.length > 13) formatted += '-' + value.substring(13, 14);
+        input.value = formatted;
+        
+        validateField(input, CLIENTE_VALIDATORS.nit(formatted));
+    } else {
+        // Formato DUI: 00000000-0 (9 digitos)
+        value = value.slice(0, 9);
+        let formatted = '';
+        if (value.length > 0) formatted += value.substring(0, 8);
+        if (value.length > 8) formatted += '-' + value.substring(8, 9);
+        input.value = formatted;
+
+        validateField(input, CLIENTE_VALIDATORS.dui(formatted));
+    }
+}
+
+function formatTelefonoInput(input) {
+    let value = input.value.replace(/\D/g, '').slice(0, 8);
+    if (value.length > 4) {
+        value = value.substring(0, 4) + '-' + value.substring(4, 8);
+    }
+    input.value = value;
+    validateField(input, CLIENTE_VALIDATORS.telefono(value));
 }
 
 function validateNombreInput(input) {
-    let value = input.value;
-    
-    // Remover caracteres no permitidos
-    let cleanValue = value.replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑ\s\.'-]/g, '');
-    
-    // Limitar espacios múltiples a uno solo
-    cleanValue = cleanValue.replace(/\s+/g, ' ');
-    
-    // Limitar guiones múltiples a uno solo
-    cleanValue = cleanValue.replace(/-+/g, '-');
-    
-    // Limitar apóstrofes múltiples a uno solo
-    cleanValue = cleanValue.replace(/'+/g, '\'');
-    
-    // Limitar puntos múltiples a uno solo
-    cleanValue = cleanValue.replace(/\.+/g, '.');
-    
-    // Si cambió el valor, actualizar
-    if (input.value !== cleanValue) {
-        const cursorPos = input.selectionStart;
-        input.value = cleanValue;
-        input.setSelectionRange(cursorPos - 1, cursorPos - 1);
-    }
-    
-    // Validación visual
-    const hint = document.getElementById('nombre-hint');
-    
-    if (!input.value.trim()) {
-        input.style.borderColor = '#d1d5db';
-        if (hint) {
-            hint.textContent = 'Solo letras, espacios y algunos caracteres especiales (ñ, á, é, í, ó, ú)';
-            hint.style.color = '#6b7280';
-        }
-    } else if (/^[a-zA-ZáéíóúÁÉÍÓÚñÑ]+(?:[ '-][a-zA-ZáéíóúÁÉÍÓÚñÑ]+)*$/.test(input.value.trim())) {
-        // Validación mejorada: debe empezar con letra y no puede ser solo caracteres especiales
-        input.style.borderColor = '#10b981';
-        if (hint) {
-            hint.textContent = '✓ Formato válido';
-            hint.style.color = '#10b981';
-        }
+    // Permitir letras, espacios, puntos, comas y guiones (para empresas)
+    const regex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s.,-]+$/;
+    validateField(input, regex.test(input.value) && input.value.length > 3);
+}
+
+function validateField(input, isValid) {
+    if (isValid) {
+        input.style.borderColor = '#10b981'; // Verde
+        input.style.backgroundColor = '#f0fdf4';
     } else {
-        input.style.borderColor = '#ef4444';
-        if (hint) {
-            hint.textContent = 'Debe contener al menos una letra y no puede ser solo caracteres especiales';
-            hint.style.color = '#ef4444';
-        }
+        input.style.borderColor = '#ef4444'; // Rojo
+        input.style.backgroundColor = '#fef2f2';
     }
 }
 
-// Función para prevenir entrada de números en el keypress
-function allowOnlyLetters(event) {
-    const key = event.key;
+function updateClienteFormCalculos() {
+    const ing = parseFloat(document.getElementById('ingresos').value) || 0;
+    const egr = parseFloat(document.getElementById('egresos').value) || 0;
+    const cap = ing - egr;
     
-    // Permitir teclas de control (backspace, tab, enter, etc.)
-    if (event.ctrlKey || event.altKey || 
-        key === 'Backspace' || key === 'Tab' || key === 'Enter' || 
-        key === 'Delete' || key === 'ArrowLeft' || key === 'ArrowRight' ||
-        key === 'ArrowUp' || key === 'ArrowDown' || key === 'Home' || key === 'End') {
-        return true;
-    }
-    
-    // Permitir letras, espacios, acentos, ñ y algunos caracteres especiales
-    const allowedChars = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s\.'-]$/;
-    
-    if (!allowedChars.test(key)) {
-        event.preventDefault();
-        return false;
-    }
-    
-    return true;
-}
-
-// Funciones para formato de teléfono
-function formatTelefonoInput(input) {
-    // Guardar cursor position
-    const cursorPos = input.selectionStart;
-    const value = input.value;
-
-    // Solo números, máximo 8 dígitos
-    let cleanValue = value.replace(/\D/g, '').slice(0, 8);
-
-    // Aplicar formato 2222-2222
-    let formatted = '';
-    for (let i = 0; i < cleanValue.length; i++) {
-        if (i === 4) {
-            formatted += '-';
-        }
-        formatted += cleanValue[i];
-    }
-
-    // Solo actualizar si cambió
-    if (input.value !== formatted) {
-        input.value = formatted;
-
-        // Restaurar cursor position
-        let newCursorPos = cursorPos;
-        if (cursorPos > 4 && cleanValue.length > 4) {
-            newCursorPos++; // Ajustar por el guión agregado
-        }
-        setTimeout(() => {
-            input.setSelectionRange(newCursorPos, newCursorPos);
-        }, 0);
-    }
-
-    // Validación visual
-    validateTelefono(input);
-}
-
-function handleTelefonoKeydown(e, input) {
-    if (e.key === 'Backspace') {
-        const cursorPos = input.selectionStart;
-        const value = input.value;
-
-        // Si estamos justo después del guión, mover cursor atrás
-        if (cursorPos === 5 && value[4] === '-') {
-            e.preventDefault();
-            input.setSelectionRange(4, 4);
-        }
-    }
-}
-
-function validateTelefono(input) {
-    const hint = document.getElementById('telefono-hint');
-
-    if (!input.value) {
-        input.style.borderColor = '#d1d5db';
-        input.style.boxShadow = 'none';
-        if (hint) {
-            hint.textContent = 'Formato: 2222-2222';
-            hint.style.color = '#6b7280';
-        }
-    } else if (/^\d{4}-\d{4}$/.test(input.value)) {
-        input.style.borderColor = '#10b981';
-        input.style.boxShadow = '0 0 0 3px rgba(16, 185, 129, 0.1)';
-        if (hint) {
-            hint.textContent = '✓ Formato válido';
-            hint.style.color = '#10b981';
-        }
-    } else {
-        input.style.borderColor = '#ef4444';
-        input.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.1)';
-        if (hint) {
-            hint.textContent = 'Formato incorrecto. Use: 2222-2222';
-            hint.style.color = '#ef4444';
-        }
-    }
-}
-
-// Funciones para formato de DUI/NIT
-function formatDuiInput(input) {
-    const cursorPos = input.selectionStart;
-    const value = input.value;
-    const tipo = document.getElementById('tipo')?.value;
-
-    if (tipo === 'natural') {
-        // DUI: 00000000-0
-        let cleanValue = value.replace(/\D/g, '').slice(0, 9);
-
-        let formatted = '';
-        for (let i = 0; i < cleanValue.length; i++) {
-            if (i === 8) {
-                formatted += '-';
-            }
-            formatted += cleanValue[i];
-        }
-
-        if (input.value !== formatted) {
-            input.value = formatted;
-
-            let newCursorPos = cursorPos;
-            if (cursorPos > 8 && cleanValue.length > 8) {
-                newCursorPos++; // Ajustar por guión
-            }
-            setTimeout(() => {
-                input.setSelectionRange(newCursorPos, newCursorPos);
-            }, 0);
-        }
-    } else {
-        // NIT: 0614-161090-103-6
-        let cleanValue = value.replace(/\D/g, '').slice(0, 14);
-
-        let formatted = '';
-        for (let i = 0; i < cleanValue.length; i++) {
-            if (i === 4 || i === 10 || i === 13) {
-                formatted += '-';
-            }
-            formatted += cleanValue[i];
-        }
-
-        if (input.value !== formatted) {
-            input.value = formatted;
-
-            // Ajustar cursor considerando guiones
-            setTimeout(() => {
-                input.setSelectionRange(cursorPos, cursorPos);
-            }, 0);
-        }
-    }
-
-    validateDui(input);
-}
-
-function handleDuiKeydown(e, input) {
-    if (e.key === 'Backspace') {
-        const cursorPos = input.selectionStart;
-        const value = input.value;
-        const tipo = document.getElementById('tipo')?.value;
-
-        if (tipo === 'natural') {
-            // Para DUI: si estamos después del guión (posición 9), mover atrás
-            if (cursorPos === 9 && value[8] === '-') {
-                e.preventDefault();
-                input.setSelectionRange(8, 8);
-            }
-        } else {
-            // Para NIT: si estamos después de un guión, mover atrás
-            if ((cursorPos === 5 && value[4] === '-') ||
-                (cursorPos === 12 && value[11] === '-') ||
-                (cursorPos === 16 && value[15] === '-')) {
-                e.preventDefault();
-                input.setSelectionRange(cursorPos - 1, cursorPos - 1);
-            }
-        }
-    }
-}
-
-function validateDui(input) {
-    const hint = document.getElementById('dui-hint');
-    const tipo = document.getElementById('tipo')?.value;
-
-    if (!input.value) {
-        input.style.borderColor = '#d1d5db';
-        input.style.boxShadow = 'none';
-        if (hint) {
-            hint.textContent = tipo === 'natural' ? 'Formato: 00000000-0' : 'Formato: XXXX-XXXXXX-XXX-X';
-            hint.style.color = '#6b7280';
-        }
-    } else if (tipo === 'natural' && /^\d{8}-\d$/.test(input.value)) {
-        input.style.borderColor = '#10b981';
-        input.style.boxShadow = '0 0 0 3px rgba(16, 185, 129, 0.1)';
-        if (hint) {
-            hint.textContent = '✓ Formato válido';
-            hint.style.color = '#10b981';
-        }
-    } else if (tipo === 'juridica' && /^\d{4}-\d{6}-\d{3}-\d$/.test(input.value)) {
-        input.style.borderColor = '#10b981';
-        input.style.boxShadow = '0 0 0 3px rgba(16, 185, 129, 0.1)';
-        if (hint) {
-            hint.textContent = '✓ Formato válido';
-            hint.style.color = '#10b981';
-        }
-    } else {
-        input.style.borderColor = '#ef4444';
-        input.style.boxShadow = '0 0 0 3px rgba(239, 68, 68, 0.1)';
-        if (hint) {
-            hint.textContent = tipo === 'natural' ?
-                'Formato incorrecto. Use: 00000000-0' :
-                'Formato incorrecto. Use: XXXX-XXXXXX-XXX-X';
-            hint.style.color = '#ef4444';
-        }
-    }
-}
-
-function updateClienteForm() {
-    const ingresos = parseFloat(document.getElementById('ingresos')?.value || 0);
-    const egresos = parseFloat(document.getElementById('egresos')?.value || 0);
-    const capacidad = ingresos - egresos;
-
-    const capacidadElement = document.getElementById('capacidad-pago');
-    if (capacidadElement) {
-        capacidadElement.textContent = formatCurrency(capacidad);
-    }
-
-    // Actualizar configuración de DUI
-    const tipo = document.getElementById('tipo')?.value;
-    const labelDui = document.getElementById('label-dui');
-    const duiInput = document.getElementById('dui');
-    const duiHint = document.getElementById('dui-hint');
-
-    if (labelDui && duiInput && duiHint) {
-        if (tipo === 'natural') {
-            labelDui.textContent = 'DUI (Ej: 00000000-0)';
-            duiInput.placeholder = '00000000-0';
-            duiHint.textContent = 'Formato: 00000000-0';
-        } else {
-            labelDui.textContent = 'NIT';
-            duiInput.placeholder = '0614-161090-103-6';
-            duiHint.textContent = 'Formato: XXXX-XXXXXX-XXX-X';
-        }
-
-        // Re-validar el DUI actual
-        validateDui(duiInput);
-    }
+    const txtCap = document.getElementById('txtCapacidad');
+    txtCap.textContent = formatCurrency(cap);
+    txtCap.className = cap >= 0 
+        ? "text-xl font-bold text-green-600" 
+        : "text-xl font-bold text-red-600";
 }
 
 function cancelNewCliente() {
@@ -717,61 +455,96 @@ function cancelNewCliente() {
     loadClientes();
 }
 
+// Guardar Cliente (Lógica unificada)
 async function saveCliente(event) {
     event.preventDefault();
 
+    const isJuridico = document.querySelector('input[name="tipo_cliente"][value="juridica"]').checked;
+    
+    // Recolectar datos comunes
     const formData = {
-        tipo: document.getElementById('tipo').value,
-        nombre: document.getElementById('nombre').value,
-        dui: document.getElementById('dui').value,
+        tipo: isJuridico ? 'juridico' : 'natural',
+        codigo: document.getElementById('codigo').value,
         telefono: document.getElementById('telefono').value,
+        direccion: document.getElementById('direccion').value,
         ingresos: parseFloat(document.getElementById('ingresos').value || 0),
-        egresos: parseFloat(document.getElementById('egresos').value || 0),
-        direccion: document.getElementById('direccion').value
+        egresos: parseFloat(document.getElementById('egresos').value || 0)
     };
 
-    // Si es un nuevo cliente, incluir código
-    if (!editingClienteId) {
-        formData.codigo = document.getElementById('codigo').value;
-    }
+    // Recolectar datos específicos y validar
+    if (isJuridico) {
+        formData.razon_social = document.getElementById('nombre').value;
+        formData.nombre_comercial = document.getElementById('nombre_comercial').value;
+        formData.nit = document.getElementById('documento').value;
+        formData.nrc = document.getElementById('nrc').value;
+        formData.giro_economico = document.getElementById('giro').value;
+        formData.representante_legal = document.getElementById('representante').value;
 
-    // Validaciones
-    if (formData.tipo === 'natural' && formData.dui && !VALIDATORS.dui(formData.dui)) {
-        showModal('Error', 'Formato de DUI inválido. Use: 00000000-0');
-        return;
-    }
-
-    if (formData.telefono && !VALIDATORS.telefono(formData.telefono)) {
-        showModal('Error', 'Formato de teléfono inválido. Use: 2222-2222');
-        return;
-    }
-
-    if (formData.ingresos < 0) {
-        showModal('Error', 'Los ingresos no pueden ser negativos.');
-        return;
-    }
-
-    if (formData.egresos < 0) {
-        showModal('Error', 'Los egresos no pueden ser negativos.');
-        return;
-    }
-
-    let result;
-    if (editingClienteId) {
-        // Actualizar cliente existente
-        result = await apiCall(`clientes.php?id=${editingClienteId}`, 'PUT', formData);
+        if (!CLIENTE_VALIDATORS.nit(formData.nit)) {
+            showModal('Error', 'El NIT ingresado no es válido (Debe tener 14 dígitos).');
+            return;
+        }
+        if (!CLIENTE_VALIDATORS.nrc(formData.nrc)) {
+            showModal('Error', 'El NRC es inválido.');
+            return;
+        }
+        if (!formData.razon_social) {
+            showModal('Error', 'La Razón Social es obligatoria.');
+            return;
+        }
     } else {
-        // Crear nuevo cliente
-        result = await apiCall('clientes.php', 'POST', formData);
+        formData.nombre = document.getElementById('nombre').value;
+        formData.dui = document.getElementById('documento').value;
+
+        if (!CLIENTE_VALIDATORS.dui(formData.dui)) {
+            showModal('Error', 'El DUI ingresado no es válido (Debe tener 9 dígitos).');
+            return;
+        }
+        if (!formData.nombre) {
+            showModal('Error', 'El nombre es obligatorio.');
+            return;
+        }
     }
 
-    if (result && result.success) {
-        showModal('Éxito', result.message);
-        clientesView = 'list';
-        editingClienteId = null;
-        loadClientes();
-    } else {
-        showModal('Error', result?.error || 'Error al guardar cliente');
+    if (!CLIENTE_VALIDATORS.telefono(formData.telefono)) {
+        showModal('Error', 'El teléfono debe tener formato 2222-2222.');
+        return;
+    }
+
+    // Mostrar loading en botón
+    const btn = event.target.querySelector('button[type="submit"]');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+
+    try {
+        let result;
+        // Determinar endpoint y método
+        // NOTA: Asegúrate de que tu backend acepte 'clientes.php' para ambos o usa la lógica de endpoint diferenciado
+        const endpoint = isJuridico ? 'clientes_juridicos.php' : 'clientes.php';
+        
+        if (editingClienteId) {
+            // Actualizar
+            result = await apiCall(`${endpoint}?id=${editingClienteId}`, 'PUT', formData);
+        } else {
+            // Crear
+            result = await apiCall(endpoint, 'POST', formData);
+        }
+
+        if (result && (result.success || result.id)) {
+            showModal('Éxito', 'Cliente guardado correctamente.');
+            clientesView = 'list';
+            editingClienteId = null;
+            loadClientes();
+        } else {
+            showModal('Error', result?.error || 'No se pudo guardar el cliente.');
+        }
+    } catch (error) {
+        console.error(error);
+        showModal('Error', 'Error de conexión con el servidor.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
     }
 }
 
@@ -779,13 +552,12 @@ async function saveCliente(event) {
 async function deleteCliente(id, nombre) {
     if (confirm(`¿Está seguro de eliminar al cliente "${nombre}"? Esta acción no se puede deshacer.`)) {
         showLoading();
-        
         try {
+            // Intenta borrar primero como cliente genérico
             const result = await apiCall(`clientes.php?id=${id}`, 'DELETE');
             
             if (result && result.success) {
                 showModal('Éxito', result.message);
-                // Si estábamos editando este cliente, regresar a la lista
                 if (editingClienteId === id) {
                     editingClienteId = null;
                     clientesView = 'list';
@@ -793,32 +565,25 @@ async function deleteCliente(id, nombre) {
                 loadClientes();
             } else {
                 showModal('Error', result?.error || 'Error al eliminar cliente');
+                loadClientes();
             }
         } catch (error) {
-            console.error('Error al eliminar cliente:', error);
-            showModal('Error', 'Error al eliminar el cliente');
+            console.error('Error al eliminar:', error);
+            showModal('Error', 'Ocurrió un error al intentar eliminar');
+            loadClientes();
         }
     }
 }
 
-// Hacer funciones disponibles globalmente
-window.showNewClienteForm = showNewClienteForm;
-window.showEditClienteForm = showEditClienteForm;
-window.cancelNewCliente = cancelNewCliente;
-window.saveCliente = saveCliente;
-window.updateClienteForm = updateClienteForm;
-window.deleteCliente = deleteCliente;
-
-// Agregar funciones globales
-window.formatTelefonoInput = formatTelefonoInput;
-window.handleTelefonoKeydown = handleTelefonoKeydown;
-window.formatDuiInput = formatDuiInput;
-window.handleDuiKeydown = handleDuiKeydown;
-window.validateTelefono = validateTelefono;
-window.validateDui = validateDui;
-window.loadClientesCount = loadClientesCount;
-window.generarCodigoCliente = generarCodigoCliente;
-
-window.validateNombreInput = validateNombreInput;
-window.allowOnlyLetters = allowOnlyLetters;
-window.escapeHtml = escapeHtml;
+function loadClientesModule() {
+    if (typeof loadClientes === 'function') {
+        loadClientes();
+    } else {
+         document.getElementById('main-content').innerHTML = `
+            <div class="card p-8 text-center">
+                <h2 class="text-2xl font-bold mb-4">Módulo de Activos</h2>
+                <p class="text-gray-500">Módulo en construcción o función loadActivos() no encontrada.</p>
+            </div>
+        `;
+    }
+}
