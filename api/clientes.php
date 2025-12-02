@@ -20,6 +20,50 @@ try {
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+if ($method === 'GET') {
+    if (isset($_GET['buscar'])) {
+        buscarClientes($db);
+    } else if (isset($_GET['id'])) {
+        getCliente($db);
+    } else {
+        listarClientes($db);
+    }
+} else {
+    http_response_code(405);
+    echo json_encode(['error' => 'Método no permitido']);
+}
+
+function buscarClientes($db) {
+    $termino = $_GET['buscar'] ?? '';
+    $tipo = $_GET['tipo'] ?? 'todos';
+    
+    $query = "SELECT * FROM clientes WHERE 1=1";
+    $params = [];
+    
+    if (!empty($termino)) {
+        $query .= " AND (nombre LIKE :termino OR codigo LIKE :termino OR dui LIKE :termino)";
+        $params[':termino'] = "%$termino%";
+    }
+    
+    if ($tipo !== 'todos') {
+        $query .= " AND tipo = :tipo";
+        $params[':tipo'] = $tipo;
+    }
+    
+    $query .= " ORDER BY nombre LIMIT 20";
+    
+    try {
+        $stmt = $db->prepare($query);
+        $stmt->execute($params);
+        $clientes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        echo json_encode($clientes);
+    } catch(PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+}
+
 switch ($method) {
     case 'GET':
         // Si hay un ID en la URL, obtener un cliente específico
