@@ -239,6 +239,23 @@ function procesarPago(prestamoId) {
     showModal('Próxima función', 'El módulo de pagos estará disponible en la próxima versión');
 }
 
+// ... al final de js/modules/prestamos.js ...
+
+// Aseguramos que app.js encuentre la función con el nombre nuevo
+function loadPrestamosModule() {
+    // Si tu función vieja se llama loadPrestamos(), llámala aquí
+    if (typeof loadPrestamos === 'function') {
+        loadPrestamos();
+    } else {
+        // Si no tienes código aun, muestra un placeholder
+        document.getElementById('main-content').innerHTML = `
+            <div class="card p-8 text-center">
+                <h2 class="text-2xl font-bold mb-4">Módulo de Créditos</h2>
+                <p class="text-gray-500">Módulo en construcción o función loadPrestamos() no encontrada.</p>
+            </div>
+        `;
+    }
+}
 // Hacer funciones disponibles globalmente
 window.showNewPrestamoForm = showNewPrestamoForm;
 window.cancelNewPrestamo = cancelNewPrestamo;
