@@ -20,7 +20,7 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
     <title>FINANCIERA SV - Sistema Integral</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
+<style>
         /* Estilos base */
         .card { background: white; border-radius: 0.5rem; padding: 1.5rem; box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1); }
         .btn { padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 500; border: none; cursor: pointer; transition: all 0.2s; }
@@ -47,7 +47,64 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
         
         .tab-btn { transition: all 0.2s ease; }
         .tab-btn:hover { transform: translateX(3px); }
-    </style>
+
+        /* Estilos para el módulo de préstamos */
+.range-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 5px;
+    background: #d1d5db;
+    outline: none;
+}
+
+.range-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #3b82f6;
+    cursor: pointer;
+}
+
+.range-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #3b82f6;
+    cursor: pointer;
+    border: none;
+}
+
+/* Animaciones para transiciones */
+.fade-enter {
+    opacity: 0;
+    transform: translateY(10px);
+}
+
+.fade-enter-active {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 300ms, transform 300ms;
+}
+
+/* Estilos para badges de estado */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.badge-normal { background-color: #d1fae5; color: #065f46; }
+.badge-mora { background-color: #fee2e2; color: #991b1b; }
+.badge-ejecucion { background-color: #fef3c7; color: #92400e; }
+    
+</style>
 </head>
 <body class="bg-gray-100 font-sans">
     <div class="flex h-screen">
@@ -127,12 +184,13 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
         </div>
     </div>
 
+    <!-- Solo estos archivos en index.php -->
     <script src="js/main.js"></script>
-    
+    <script src="js/app.js"></script>
     <script src="js/modules/clientes.js"></script>
     <script src="js/modules/garantias.js"></script> 
     <script src="js/modules/prestamos.js"></script>
     <script src="js/modules/activos.js"></script>
-    <script src="js/app.js"></script>
+
 </body>
 </html>

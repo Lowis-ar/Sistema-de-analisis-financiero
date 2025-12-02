@@ -1,29 +1,100 @@
 <?php
 // api/prestamos.php
 header('Content-Type: application/json');
-require_once '../config/database.php';
+session_start();
+
+// Verificar sesión
+if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
+    http_response_code(401);
+    echo json_encode(['error' => 'No autorizado']);
+    exit();
+}
+
+// Conexión a la base de datos
+$host = 'localhost';
+$dbname = 'financiera_sv';
+$username = 'root';
+$password = '';
+
+try {
+    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $username, $password);
+    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+} catch(PDOException $e) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Error de conexión: ' . $e->getMessage()]);
+    exit();
+}
 
 $method = $_SERVER['REQUEST_METHOD'];
-$db = Database::getInstance()->getConnection();
 
 switch($method) {
     case 'GET':
-        handleGet($db);
+        handleGet($conn);
         break;
     case 'POST':
-        handlePost($db);
+        handlePost($conn);
         break;
     case 'PUT':
-        handlePut($db);
+        handlePut($conn);
         break;
     default:
         http_response_code(405);
         echo json_encode(['error' => 'Método no permitido']);
 }
 
-function handleGet($db) {
+// En api/prestamos.php, modifica la función handleGet:
+
+function handleGet($conn) {
     if (isset($_GET['listar']) && $_GET['listar'] == 'activos') {
-        // Listar préstamos activos
+        listarPrestamosActivos($conn);
+    } elseif (isset($_GET['id'])) {
+        getPrestamoById($conn, $_GET['id']);
+    } else {
+        // Listar todos los préstamos si no hay parámetro
+        listarTodosPrestamos($conn);
+    }
+}
+
+// Añade esta nueva función:
+function listarTodosPrestamos($conn) {
+    try {
+        $query = "
+            SELECT 
+                p.*,
+                c.nombre as cliente_nombre,
+                c.codigo as codigo_cliente,
+                c.capacidad_pago,
+                COALESCE(
+                    (SELECT nombre_completo FROM garantias_personales gp 
+                     INNER JOIN prestamos_garantias_personales pgp ON gp.id = pgp.garantia_personal_id 
+                     WHERE pgp.prestamo_id = p.id LIMIT 1),
+                    (SELECT descripcion_inmueble FROM hipotecas h 
+                     INNER JOIN prestamos_hipotecas ph ON h.id = ph.hipoteca_id 
+                     WHERE ph.prestamo_id = p.id LIMIT 1)
+                ) as descripcion_garantia,
+                CASE 
+                    WHEN EXISTS(SELECT 1 FROM prestamos_garantias_personales WHERE prestamo_id = p.id) THEN 'Fiador'
+                    WHEN EXISTS(SELECT 1 FROM prestamos_hipotecas WHERE prestamo_id = p.id) THEN 'Hipoteca'
+                    ELSE 'Sin garantía'
+                END as tipo_garantia
+            FROM prestamos p
+            INNER JOIN clientes c ON p.cliente_id = c.id
+            ORDER BY p.fecha_otorgamiento DESC
+        ";
+        
+        $stmt = $conn->query($query);
+        $prestamos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        echo json_encode($prestamos);
+        
+    } catch(PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+}
+
+function listarPrestamosActivos($conn) {
+    try {
         $query = "
             SELECT 
                 p.*,
@@ -49,31 +120,36 @@ function handleGet($db) {
             ORDER BY p.fecha_otorgamiento DESC
         ";
         
-        try {
-            $stmt = $db->query($query);
-            $prestamos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            echo json_encode($prestamos);
-        } catch(PDOException $e) {
-            http_response_code(500);
-            echo json_encode(['error' => $e->getMessage()]);
-        }
-    } else {
-        echo json_encode([]);
+        $stmt = $conn->query($query);
+        $prestamos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        echo json_encode($prestamos);
+        
+    } catch(PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
     }
 }
 
-function handlePost($db) {
-    $data = json_decode(file_get_contents('php://input'), true);
+function handlePost($conn) {
+    // Obtener datos del cuerpo de la solicitud
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (!$input) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Datos no válidos']);
+        return;
+    }
     
     // Validaciones básicas
-    if (!isset($data['cliente_id']) || !isset($data['monto']) || !isset($data['tipo_garantia'])) {
+    if (!isset($input['cliente_id']) || !isset($input['monto']) || !isset($input['tipo_garantia'])) {
         http_response_code(400);
         echo json_encode(['error' => 'Datos incompletos']);
         return;
     }
     
     try {
-        $db->beginTransaction();
+        $conn->beginTransaction();
         
         // 1. Crear el préstamo
         $queryPrestamo = "
@@ -86,7 +162,8 @@ function handlePost($db) {
                 cliente_nombre, 
                 cuota, 
                 saldo_actual,
-                estado
+                estado,
+                fecha_otorgamiento
             ) VALUES (
                 :cliente_id,
                 'personal',
@@ -96,30 +173,33 @@ function handlePost($db) {
                 (SELECT nombre FROM clientes WHERE id = :cliente_id),
                 :cuota,
                 :monto,
-                'normal'
+                'normal',
+                NOW()
             )
         ";
         
-        $stmtPrestamo = $db->prepare($queryPrestamo);
+        $stmtPrestamo = $conn->prepare($queryPrestamo);
         $stmtPrestamo->execute([
-            ':cliente_id' => $data['cliente_id'],
-            ':monto' => $data['monto'],
-            ':plazo' => $data['plazo'],
-            ':tasa' => $data['tasa'],
-            ':cuota' => $data['cuota']
+            ':cliente_id' => $input['cliente_id'],
+            ':monto' => $input['monto'],
+            ':plazo' => $input['plazo'],
+            ':tasa' => $input['tasa'],
+            ':cuota' => $input['cuota']
         ]);
         
-        $prestamoId = $db->lastInsertId();
+        $prestamoId = $conn->lastInsertId();
         
         // 2. Procesar la garantía según el tipo
-        if ($data['tipo_garantia'] === 'fiador' && isset($data['garantia'])) {
-            procesarGarantiaFiador($db, $prestamoId, $data['cliente_id'], $data['garantia']);
+        if ($input['tipo_garantia'] === 'fiador' && isset($input['garantia'])) {
+            procesarGarantiaFiador($conn, $prestamoId, $input['cliente_id'], $input['garantia']);
         } 
-        elseif ($data['tipo_garantia'] === 'hipoteca' && isset($data['garantia'])) {
-            procesarGarantiaHipoteca($db, $prestamoId, $data['cliente_id'], $data['garantia']);
+        elseif ($input['tipo_garantia'] === 'hipoteca' && isset($input['garantia'])) {
+            procesarGarantiaHipoteca($conn, $prestamoId, $input['cliente_id'], $input['garantia']);
+        } else {
+            throw new Exception('Tipo de garantía no válido');
         }
         
-        $db->commit();
+        $conn->commit();
         
         echo json_encode([
             'success' => true,
@@ -127,14 +207,14 @@ function handlePost($db) {
             'prestamo_id' => $prestamoId
         ]);
         
-    } catch(PDOException $e) {
-        $db->rollBack();
+    } catch(Exception $e) {
+        $conn->rollBack();
         http_response_code(500);
         echo json_encode(['error' => $e->getMessage()]);
     }
 }
 
-function procesarGarantiaFiador($db, $prestamoId, $clienteId, $datosFiador) {
+function procesarGarantiaFiador($conn, $prestamoId, $clienteId, $datosFiador) {
     // 1. Insertar en garantias_personales
     $queryFiador = "
         INSERT INTO garantias_personales (
@@ -147,7 +227,8 @@ function procesarGarantiaFiador($db, $prestamoId, $clienteId, $datosFiador) {
             ingresos_mensuales,
             egresos_mensuales,
             direccion,
-            parentesco_cliente
+            parentesco_cliente,
+            fecha_registro
         ) VALUES (
             :cliente_id,
             (SELECT id FROM tipos_garantia_personal WHERE nombre LIKE 'Fiador%' LIMIT 1),
@@ -158,24 +239,25 @@ function procesarGarantiaFiador($db, $prestamoId, $clienteId, $datosFiador) {
             :ingresos_mensuales,
             :egresos_mensuales,
             :direccion,
-            :parentesco_cliente
+            :parentesco_cliente,
+            NOW()
         )
     ";
     
-    $stmtFiador = $db->prepare($queryFiador);
+    $stmtFiador = $conn->prepare($queryFiador);
     $stmtFiador->execute([
         ':cliente_id' => $clienteId,
         ':nombre_completo' => $datosFiador['nombre_completo'],
         ':dui' => $datosFiador['dui'],
-        ':nit' => $datosFiador['nit'] ?? null,
-        ':telefono' => $datosFiador['telefono'] ?? null,
+        ':nit' => !empty($datosFiador['nit']) ? $datosFiador['nit'] : null,
+        ':telefono' => !empty($datosFiador['telefono']) ? $datosFiador['telefono'] : null,
         ':ingresos_mensuales' => $datosFiador['ingresos_mensuales'],
         ':egresos_mensuales' => $datosFiador['egresos_mensuales'] ?? 0,
-        ':direccion' => $datosFiador['direccion'] ?? null,
-        ':parentesco_cliente' => $datosFiador['parentesco_cliente'] ?? null
+        ':direccion' => !empty($datosFiador['direccion']) ? $datosFiador['direccion'] : null,
+        ':parentesco_cliente' => !empty($datosFiador['parentesco_cliente']) ? $datosFiador['parentesco_cliente'] : null
     ]);
     
-    $garantiaId = $db->lastInsertId();
+    $garantiaId = $conn->lastInsertId();
     
     // 2. Calcular capacidad de pago del fiador
     $capacidadFiador = $datosFiador['ingresos_mensuales'] - ($datosFiador['egresos_mensuales'] ?? 0);
@@ -187,16 +269,18 @@ function procesarGarantiaFiador($db, $prestamoId, $clienteId, $datosFiador) {
             prestamo_id,
             garantia_personal_id,
             monto_responsabilidad,
-            porcentaje_responsabilidad
+            porcentaje_responsabilidad,
+            fecha_asignacion
         ) VALUES (
             :prestamo_id,
             :garantia_id,
             :monto_responsabilidad,
-            100.00
+            100.00,
+            NOW()
         )
     ";
     
-    $stmtRelacion = $db->prepare($queryRelacion);
+    $stmtRelacion = $conn->prepare($queryRelacion);
     $stmtRelacion->execute([
         ':prestamo_id' => $prestamoId,
         ':garantia_id' => $garantiaId,
@@ -205,14 +289,14 @@ function procesarGarantiaFiador($db, $prestamoId, $clienteId, $datosFiador) {
     
     // 4. Actualizar capacidad de pago del fiador en la tabla
     $queryUpdate = "UPDATE garantias_personales SET capacidad_pago = :capacidad WHERE id = :id";
-    $stmtUpdate = $db->prepare($queryUpdate);
+    $stmtUpdate = $conn->prepare($queryUpdate);
     $stmtUpdate->execute([
         ':capacidad' => $capacidadFiador,
         ':id' => $garantiaId
     ]);
 }
 
-function procesarGarantiaHipoteca($db, $prestamoId, $clienteId, $datosHipoteca) {
+function procesarGarantiaHipoteca($conn, $prestamoId, $clienteId, $datosHipoteca) {
     // 1. Insertar en hipotecas
     $queryHipoteca = "
         INSERT INTO hipotecas (
@@ -227,7 +311,8 @@ function procesarGarantiaHipoteca($db, $prestamoId, $clienteId, $datosHipoteca) 
             valor_avaluo,
             fecha_avaluo,
             porcentaje_cobertura,
-            estado
+            estado,
+            fecha_registro
         ) VALUES (
             :cliente_id,
             :numero_matricula_cnr,
@@ -240,11 +325,12 @@ function procesarGarantiaHipoteca($db, $prestamoId, $clienteId, $datosHipoteca) 
             :valor_avaluo,
             :fecha_avaluo,
             :porcentaje_cobertura,
-            'vigente'
+            'vigente',
+            NOW()
         )
     ";
     
-    $stmtHipoteca = $db->prepare($queryHipoteca);
+    $stmtHipoteca = $conn->prepare($queryHipoteca);
     $stmtHipoteca->execute([
         ':cliente_id' => $clienteId,
         ':numero_matricula_cnr' => $datosHipoteca['numero_matricula_cnr'],
@@ -252,14 +338,14 @@ function procesarGarantiaHipoteca($db, $prestamoId, $clienteId, $datosHipoteca) 
         ':grado_hipoteca' => $datosHipoteca['grado_hipoteca'],
         ':ubicacion_inmueble' => $datosHipoteca['ubicacion_inmueble'],
         ':descripcion_inmueble' => $datosHipoteca['descripcion_inmueble'],
-        ':area_terreno' => $datosHipoteca['area_terreno'] ?? null,
-        ':area_construccion' => $datosHipoteca['area_construccion'] ?? null,
+        ':area_terreno' => !empty($datosHipoteca['area_terreno']) ? $datosHipoteca['area_terreno'] : null,
+        ':area_construccion' => !empty($datosHipoteca['area_construccion']) ? $datosHipoteca['area_construccion'] : null,
         ':valor_avaluo' => $datosHipoteca['valor_avaluo'],
         ':fecha_avaluo' => $datosHipoteca['fecha_avaluo'],
         ':porcentaje_cobertura' => $datosHipoteca['porcentaje_cobertura']
     ]);
     
-    $hipotecaId = $db->lastInsertId();
+    $hipotecaId = $conn->lastInsertId();
     
     // 2. Insertar en historial de avalúos
     $queryAvaluo = "
@@ -269,45 +355,47 @@ function procesarGarantiaHipoteca($db, $prestamoId, $clienteId, $datosHipoteca) 
             fecha_avaluo,
             valor_avaluo,
             metodo_valuacion,
-            estado_conservacion
+            estado_conservacion,
+            fecha_registro
         ) VALUES (
             :hipoteca_id,
             'Sistema Automático',
             :fecha_avaluo,
             :valor_avaluo,
             'Ingresado manualmente',
-            'bueno'
+            'bueno',
+            NOW()
         )
     ";
     
-    $stmtAvaluo = $db->prepare($queryAvaluo);
+    $stmtAvaluo = $conn->prepare($queryAvaluo);
     $stmtAvaluo->execute([
         ':hipoteca_id' => $hipotecaId,
         ':fecha_avaluo' => $datosHipoteca['fecha_avaluo'],
         ':valor_avaluo' => $datosHipoteca['valor_avaluo']
     ]);
     
-    // 3. Calcular fecha para próximo avalúo (3 años según ley)
-    $fechaProximoAvaluo = date('Y-m-d', strtotime($datosHipoteca['fecha_avaluo'] . ' + 3 years'));
-    
-    // 4. Relacionar con el préstamo
+    // 3. Calcular monto garantizado
     $montoGarantizado = $datosHipoteca['valor_avaluo'] * ($datosHipoteca['porcentaje_cobertura'] / 100);
     
+    // 4. Relacionar con el préstamo
     $queryRelacion = "
         INSERT INTO prestamos_hipotecas (
             prestamo_id,
             hipoteca_id,
             monto_garantizado,
-            porcentaje_cobertura
+            porcentaje_cobertura,
+            fecha_asignacion
         ) VALUES (
             :prestamo_id,
             :hipoteca_id,
             :monto_garantizado,
-            :porcentaje_cobertura
+            :porcentaje_cobertura,
+            NOW()
         )
     ";
     
-    $stmtRelacion = $db->prepare($queryRelacion);
+    $stmtRelacion = $conn->prepare($queryRelacion);
     $stmtRelacion->execute([
         ':prestamo_id' => $prestamoId,
         ':hipoteca_id' => $hipotecaId,
@@ -315,43 +403,75 @@ function procesarGarantiaHipoteca($db, $prestamoId, $clienteId, $datosHipoteca) 
         ':porcentaje_cobertura' => $datosHipoteca['porcentaje_cobertura']
     ]);
     
-    // 5. Crear alerta para próximo avalúo (si aplica)
+    // 5. Crear alerta para próximo avalúo (3 años según ley)
+    $fechaProximoAvaluo = date('Y-m-d', strtotime($datosHipoteca['fecha_avaluo'] . ' + 3 years'));
     $hoy = date('Y-m-d');
-    if ($fechaProximoAvaluo > $hoy) {
-        $diasRestantes = ceil((strtotime($fechaProximoAvaluo) - strtotime($hoy)) / (60 * 60 * 24));
+    $diasRestantes = ceil((strtotime($fechaProximoAvaluo) - strtotime($hoy)) / (60 * 60 * 24));
+    
+    if ($diasRestantes <= 90) { // Alertar 90 días antes
+        $queryAlerta = "
+            INSERT INTO alertas_avaluos (
+                hipoteca_id,
+                tipo_alerta,
+                fecha_alerta,
+                fecha_vencimiento,
+                dias_restantes,
+                estado,
+                fecha_notificacion
+            ) VALUES (
+                :hipoteca_id,
+                'avaluo_proximo_vencer',
+                :fecha_alerta,
+                :fecha_vencimiento,
+                :dias_restantes,
+                'pendiente',
+                NOW()
+            )
+        ";
         
-        if ($diasRestantes <= 90) { // Alertar 90 días antes
-            $queryAlerta = "
-                INSERT INTO alertas_avaluos (
-                    hipoteca_id,
-                    tipo_alerta,
-                    fecha_alerta,
-                    fecha_vencimiento,
-                    dias_restantes,
-                    estado
-                ) VALUES (
-                    :hipoteca_id,
-                    'avaluo_proximo_vencer',
-                    :fecha_alerta,
-                    :fecha_vencimiento,
-                    :dias_restantes,
-                    'pendiente'
-                )
-            ";
-            
-            $stmtAlerta = $db->prepare($queryAlerta);
-            $stmtAlerta->execute([
-                ':hipoteca_id' => $hipotecaId,
-                ':fecha_alerta' => $hoy,
-                ':fecha_vencimiento' => $fechaProximoAvaluo,
-                ':dias_restantes' => $diasRestantes
-            ]);
-        }
+        $stmtAlerta = $conn->prepare($queryAlerta);
+        $stmtAlerta->execute([
+            ':hipoteca_id' => $hipotecaId,
+            ':fecha_alerta' => $hoy,
+            ':fecha_vencimiento' => $fechaProximoAvaluo,
+            ':dias_restantes' => $diasRestantes
+        ]);
     }
 }
 
-function handlePut($db) {
+function getPrestamoById($conn, $id) {
+    try {
+        $query = "
+            SELECT 
+                p.*,
+                c.nombre as cliente_nombre,
+                c.codigo as codigo_cliente,
+                c.capacidad_pago
+            FROM prestamos p
+            INNER JOIN clientes c ON p.cliente_id = c.id
+            WHERE p.id = :id
+        ";
+        
+        $stmt = $conn->prepare($query);
+        $stmt->execute([':id' => $id]);
+        $prestamo = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($prestamo) {
+            echo json_encode($prestamo);
+        } else {
+            http_response_code(404);
+            echo json_encode(['error' => 'Préstamo no encontrado']);
+        }
+        
+    } catch(PDOException $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+}
+
+function handlePut($conn) {
     // Para futuras actualizaciones (pagos, cambios de estado, etc.)
+    http_response_code(501);
     echo json_encode(['message' => 'Función PUT en desarrollo']);
 }
 ?>

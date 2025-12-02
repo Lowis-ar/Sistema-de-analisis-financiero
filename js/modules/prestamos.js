@@ -1,7 +1,130 @@
 // js/modules/prestamos.js
+// Módulo de Otorgamiento de Créditos para Clientes Naturales
 
 let clienteSeleccionado = null;
 let tipoGarantiaSeleccionado = 'fiador';
+
+// ==========================================
+// FUNCIONES ESPECÍFICAS DEL MÓDULO (evitan conflictos)
+// ==========================================
+
+function calcularCuotaPrestamo() {
+    const monto = parseFloat(document.getElementById('monto')?.value) || 0;
+    const plazo = parseInt(document.getElementById('plazo')?.value) || 0;
+    const tasa = parseFloat(document.getElementById('tasa')?.value) || 0;
+    
+    if (monto && plazo && tasa) {
+        // Usar la función global calcularCuota si existe, si no calcular localmente
+        const cuota = window.calcularCuota ? window.calcularCuota(monto, tasa, plazo) : 
+                     (monto * (tasa/100/12)) / (1 - Math.pow(1 + (tasa/100/12), -plazo));
+        
+        document.getElementById('cuotaCalculada').textContent = window.formatCurrency ? window.formatCurrency(cuota) : '$' + cuota.toFixed(2);
+        
+        // Validar contra capacidad de pago
+        const capacidad = clienteSeleccionado ? parseFloat(clienteSeleccionado.capacidad_pago) : 0;
+        const alertaCuota = document.getElementById('alertaCuota');
+        
+        if (cuota > capacidad && capacidad > 0) {
+            if (alertaCuota) alertaCuota.classList.remove('hidden');
+        } else {
+            if (alertaCuota) alertaCuota.classList.add('hidden');
+        }
+        
+        actualizarResumenPrestamo();
+    }
+}
+
+function actualizarResumenPrestamo() {
+    // Cliente
+    const resumenCliente = document.getElementById('resumenCliente');
+    if (resumenCliente) {
+        resumenCliente.textContent = clienteSeleccionado ? clienteSeleccionado.nombre : 'No seleccionado';
+    }
+    
+    // Monto
+    const monto = parseFloat(document.getElementById('monto')?.value) || 0;
+    const resumenMonto = document.getElementById('resumenMonto');
+    if (resumenMonto) {
+        resumenMonto.textContent = window.formatCurrency ? window.formatCurrency(monto) : '$' + monto.toFixed(2);
+    }
+    
+    // Garantía
+    let garantiaTexto = 'No seleccionada';
+    if (tipoGarantiaSeleccionado === 'fiador') {
+        const nombreFiador = document.getElementById('fiadorNombre')?.value || '';
+        garantiaTexto = nombreFiador ? `Fiador: ${nombreFiador}` : 'Fiador (sin datos)';
+    } else {
+        const matricula = document.getElementById('hipotecaMatricula')?.value || '';
+        garantiaTexto = matricula ? `Hipoteca: ${matricula}` : 'Hipoteca (sin datos)';
+    }
+    
+    const resumenGarantia = document.getElementById('resumenGarantia');
+    if (resumenGarantia) {
+        resumenGarantia.textContent = garantiaTexto;
+    }
+    
+    // Cuota
+    const cuotaElement = document.getElementById('cuotaCalculada');
+    const cuotaTexto = cuotaElement ? cuotaElement.textContent : '$0.00';
+    const resumenCuota = document.getElementById('resumenCuota');
+    if (resumenCuota) {
+        resumenCuota.textContent = cuotaTexto;
+    }
+}
+
+function limpiarFormularioPrestamo() {
+    // Limpiar selección de cliente
+    clienteSeleccionado = null;
+    const infoCliente = document.getElementById('infoCliente');
+    if (infoCliente) infoCliente.classList.add('hidden');
+    
+    const buscarCliente = document.getElementById('buscarCliente');
+    if (buscarCliente) buscarCliente.value = '';
+    
+    const resultadosClientes = document.getElementById('resultadosClientes');
+    if (resultadosClientes) resultadosClientes.innerHTML = '';
+    
+    // Limpiar formulario de crédito
+    const formPrestamo = document.getElementById('formPrestamo');
+    if (formPrestamo) formPrestamo.reset();
+    
+    const cuotaCalculada = document.getElementById('cuotaCalculada');
+    if (cuotaCalculada) cuotaCalculada.textContent = '$0.00';
+    
+    const alertaCuota = document.getElementById('alertaCuota');
+    if (alertaCuota) alertaCuota.classList.add('hidden');
+    
+    const capacidadMaxima = document.getElementById('capacidadMaxima');
+    if (capacidadMaxima) capacidadMaxima.textContent = '$0.00';
+    
+    // Limpiar formulario de garantía
+    if (tipoGarantiaSeleccionado === 'fiador') {
+        const formFiador = document.getElementById('formFiador');
+        if (formFiador) formFiador.reset();
+    } else {
+        const formHipoteca = document.getElementById('formHipoteca');
+        if (formHipoteca) formHipoteca.reset();
+        
+        const hoy = new Date().toISOString().split('T')[0];
+        const fechaInput = document.getElementById('hipotecaFechaAvaluo');
+        if (fechaInput) fechaInput.value = hoy;
+        
+        const coberturaInput = document.getElementById('hipotecaCobertura');
+        if (coberturaInput) coberturaInput.value = 70;
+        
+        const coberturaValue = document.getElementById('coberturaValue');
+        if (coberturaValue) coberturaValue.textContent = '70%';
+        
+        const maximoPrestar = document.getElementById('maximoPrestar');
+        if (maximoPrestar) maximoPrestar.textContent = '$0.00';
+    }
+    
+    actualizarResumenPrestamo();
+}
+
+// ==========================================
+// FUNCIÓN PRINCIPAL DEL MÓDULO
+// ==========================================
 
 async function loadPrestamosModule() {
     console.log('📝 Cargando módulo de préstamos...');
@@ -18,15 +141,15 @@ async function loadPrestamosModule() {
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <!-- Columna Izquierda: Datos del Préstamo -->
                 <div class="space-y-6">
-                    ${createCard(`
+                    <div class="card">
                         <h3 class="text-xl font-semibold mb-4 text-gray-700">1. Seleccionar Cliente</h3>
                         <div class="mb-4">
                             <label class="block text-sm font-medium text-gray-700 mb-2">Buscar Cliente Natural</label>
                             <div class="flex gap-2">
                                 <input type="text" id="buscarCliente" placeholder="Nombre, Código o DUI..." 
                                        class="flex-1 border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                       onkeyup="buscarClientes(this.value)">
-                                <button onclick="buscarClientes(document.getElementById('buscarCliente').value)" 
+                                       onkeyup="buscarClientesNaturales(this.value)">
+                                <button onclick="buscarClientesNaturales(document.getElementById('buscarCliente').value)" 
                                         class="btn btn-primary">
                                     <i class="fas fa-search"></i>
                                 </button>
@@ -52,9 +175,9 @@ async function loadPrestamosModule() {
                                 </button>
                             </div>
                         </div>
-                    `)}
+                    </div>
 
-                    ${createCard(`
+                    <div class="card">
                         <h3 class="text-xl font-semibold mb-4 text-gray-700">2. Datos del Crédito</h3>
                         <form id="formPrestamo" onsubmit="return false;">
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
@@ -62,19 +185,19 @@ async function loadPrestamosModule() {
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Monto ($)</label>
                                     <input type="number" id="monto" min="100" step="0.01" required 
                                            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                           oninput="calcularCuota()">
+                                           oninput="calcularCuotaPrestamo()">
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Plazo (meses)</label>
                                     <input type="number" id="plazo" min="1" max="360" required 
                                            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                           oninput="calcularCuota()">
+                                           oninput="calcularCuotaPrestamo()">
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">Tasa Anual (%)</label>
                                     <input type="number" id="tasa" min="0.1" max="100" step="0.01" required 
                                            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                           oninput="calcularCuota()">
+                                           oninput="calcularCuotaPrestamo()">
                                 </div>
                             </div>
                             
@@ -95,12 +218,12 @@ async function loadPrestamosModule() {
                                 </div>
                             </div>
                         </form>
-                    `)}
+                    </div>
                 </div>
 
                 <!-- Columna Derecha: Garantías -->
                 <div class="space-y-6">
-                    ${createCard(`
+                    <div class="card">
                         <h3 class="text-xl font-semibold mb-4 text-gray-700">3. Seleccionar Tipo de Garantía</h3>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                             <button onclick="seleccionarTipoGarantia('fiador')" 
@@ -121,7 +244,7 @@ async function loadPrestamosModule() {
                         <div id="formGarantia">
                             ${renderFormularioGarantia()}
                         </div>
-                    `)}
+                    </div>
 
                     <!-- Resumen y Botón de Otorgamiento -->
                     <div class="card bg-blue-50 border border-blue-200">
@@ -151,7 +274,7 @@ async function loadPrestamosModule() {
                                     class="flex-1 btn btn-success py-3">
                                 <i class="fas fa-check-circle mr-2"></i> Otorgar Crédito
                             </button>
-                            <button onclick="limpiarFormulario()" 
+                            <button onclick="limpiarFormularioPrestamo()" 
                                     class="btn btn-secondary py-3">
                                 <i class="fas fa-redo mr-2"></i> Limpiar
                             </button>
@@ -175,8 +298,12 @@ async function loadPrestamosModule() {
     
     document.getElementById('main-content').innerHTML = content;
     inicializarEventosPrestamos();
-    actualizarResumen();
+    actualizarResumenPrestamo();
 }
+
+// ==========================================
+// FUNCIONES AUXILIARES
+// ==========================================
 
 function renderFormularioGarantia() {
     if (tipoGarantiaSeleccionado === 'fiador') {
@@ -199,7 +326,7 @@ function renderFormularioGarantia() {
                         <label class="block text-sm font-medium text-gray-700 mb-1">NIT</label>
                         <input type="text" id="fiadorNIT" 
                                class="w-full border border-gray-300 rounded-md px-3 py-2"
-                               oninput="this.value = formatNIT(this.value)">
+                               oninput="this.value = window.formatNIT ? window.formatNIT(this.value) : this.value">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
@@ -316,8 +443,8 @@ function renderFormularioGarantia() {
                             <label class="block text-sm font-medium text-gray-700 mb-1">% Cobertura</label>
                             <div class="flex items-center">
                                 <input type="range" id="hipotecaCobertura" min="50" max="100" step="1" value="70"
-                                       class="flex-1 mr-3"
-                                       oninput="document.getElementById('coberturaValue').textContent = this.value + '%'">
+                                       class="flex-1 mr-3 range-slider"
+                                       oninput="document.getElementById('coberturaValue').textContent = this.value + '%'; calcularMaximoPrestamo()">
                                 <span id="coberturaValue" class="font-bold text-blue-600 w-12">70%</span>
                             </div>
                             <p class="text-xs text-gray-500 mt-1">Porcentaje del avalúo que cubre el préstamo</p>
@@ -343,35 +470,49 @@ function inicializarEventosPrestamos() {
     const valorAvaluoInput = document.getElementById('hipotecaValor');
     const coberturaInput = document.getElementById('hipotecaCobertura');
     
-    if (valorAvaluoInput && coberturaInput) {
+    if (valorAvaluoInput) {
         valorAvaluoInput.addEventListener('input', calcularMaximoPrestamo);
+    }
+    if (coberturaInput) {
         coberturaInput.addEventListener('input', calcularMaximoPrestamo);
     }
 }
 
-// 2. FUNCIONES DE CLIENTES
-async function buscarClientes(termino) {
+// ==========================================
+// FUNCIONES DE CLIENTES
+// ==========================================
+
+async function buscarClientesNaturales(termino) {
     if (!termino || termino.length < 2) {
-        document.getElementById('resultadosClientes').innerHTML = `
-            <p class="text-gray-500 text-center py-4">Ingrese al menos 2 caracteres</p>
-        `;
+        const resultadosClientes = document.getElementById('resultadosClientes');
+        if (resultadosClientes) {
+            resultadosClientes.innerHTML = `
+                <p class="text-gray-500 text-center py-4">Ingrese al menos 2 caracteres</p>
+            `;
+        }
         return;
     }
     
     try {
-        const response = await apiCall(`clientes.php?buscar=${encodeURIComponent(termino)}&tipo=natural`);
+        const response = await window.apiCall ? await window.apiCall(`clientes.php?buscar=${encodeURIComponent(termino)}&tipo=natural`) : {error: 'API no disponible'};
         
         if (response.error) {
-            document.getElementById('resultadosClientes').innerHTML = `
-                <p class="text-red-500 text-center py-4">${response.error}</p>
-            `;
+            const resultadosClientes = document.getElementById('resultadosClientes');
+            if (resultadosClientes) {
+                resultadosClientes.innerHTML = `
+                    <p class="text-red-500 text-center py-4">${response.error}</p>
+                `;
+            }
             return;
         }
         
         if (response.length === 0) {
-            document.getElementById('resultadosClientes').innerHTML = `
-                <p class="text-gray-500 text-center py-4">No se encontraron clientes</p>
-            `;
+            const resultadosClientes = document.getElementById('resultadosClientes');
+            if (resultadosClientes) {
+                resultadosClientes.innerHTML = `
+                    <p class="text-gray-500 text-center py-4">No se encontraron clientes</p>
+                `;
+            }
             return;
         }
         
@@ -398,9 +539,15 @@ async function buscarClientes(termino) {
             </div>
         `).join('');
         
-        document.getElementById('resultadosClientes').innerHTML = resultadosHTML;
+        const resultadosClientes = document.getElementById('resultadosClientes');
+        if (resultadosClientes) {
+            resultadosClientes.innerHTML = resultadosHTML;
+        }
     } catch (error) {
         console.error('Error buscando clientes:', error);
+        if (window.showNotification) {
+            window.showNotification('Error al buscar clientes', 'error');
+        }
     }
 }
 
@@ -408,54 +555,60 @@ function seleccionarCliente(cliente) {
     clienteSeleccionado = cliente;
     
     // Mostrar info del cliente
-    document.getElementById('infoCliente').classList.remove('hidden');
-    document.getElementById('clienteNombre').textContent = cliente.nombre;
-    document.getElementById('clienteCodigo').textContent = cliente.codigo;
-    if (cliente.dui) document.getElementById('clienteDUI').textContent = cliente.dui;
-    document.getElementById('clienteCapacidad').textContent = formatCurrency(cliente.capacidad_pago);
+    const infoCliente = document.getElementById('infoCliente');
+    if (infoCliente) infoCliente.classList.remove('hidden');
+    
+    const clienteNombre = document.getElementById('clienteNombre');
+    if (clienteNombre) clienteNombre.textContent = cliente.nombre;
+    
+    const clienteCodigo = document.getElementById('clienteCodigo');
+    if (clienteCodigo) clienteCodigo.textContent = cliente.codigo;
+    
+    const clienteDUI = document.getElementById('clienteDUI');
+    if (clienteDUI && cliente.dui) clienteDUI.textContent = cliente.dui;
+    
+    const clienteCapacidad = document.getElementById('clienteCapacidad');
+    if (clienteCapacidad) clienteCapacidad.textContent = window.formatCurrency ? window.formatCurrency(cliente.capacidad_pago) : '$' + cliente.capacidad_pago;
     
     // Ocultar resultados
-    document.getElementById('resultadosClientes').innerHTML = '';
-    document.getElementById('buscarCliente').value = '';
+    const resultadosClientes = document.getElementById('resultadosClientes');
+    if (resultadosClientes) resultadosClientes.innerHTML = '';
+    
+    const buscarCliente = document.getElementById('buscarCliente');
+    if (buscarCliente) buscarCliente.value = '';
     
     // Actualizar capacidad en formulario
-    document.getElementById('capacidadMaxima').textContent = formatCurrency(cliente.capacidad_pago);
+    const capacidadMaxima = document.getElementById('capacidadMaxima');
+    if (capacidadMaxima) capacidadMaxima.textContent = window.formatCurrency ? window.formatCurrency(cliente.capacidad_pago) : '$' + cliente.capacidad_pago;
     
     // Recalcular cuota
-    calcularCuota();
-    actualizarResumen();
+    calcularCuotaPrestamo();
+    actualizarResumenPrestamo();
 }
 
 function deseleccionarCliente() {
     clienteSeleccionado = null;
-    document.getElementById('infoCliente').classList.add('hidden');
-    document.getElementById('capacidadMaxima').textContent = '$0.00';
-    actualizarResumen();
+    const infoCliente = document.getElementById('infoCliente');
+    if (infoCliente) infoCliente.classList.add('hidden');
+    
+    const capacidadMaxima = document.getElementById('capacidadMaxima');
+    if (capacidadMaxima) capacidadMaxima.textContent = '$0.00';
+    
+    actualizarResumenPrestamo();
 }
 
-// 3. FUNCIONES DE CÁLCULO
-function calcularCuota() {
-    const monto = parseFloat(document.getElementById('monto')?.value) || 0;
-    const plazo = parseInt(document.getElementById('plazo')?.value) || 0;
-    const tasa = parseFloat(document.getElementById('tasa')?.value) || 0;
-    
-    if (monto && plazo && tasa) {
-        const tasaMensual = (tasa / 100) / 12;
-        const cuota = (monto * tasaMensual) / (1 - Math.pow(1 + tasaMensual, -plazo));
-        
-        document.getElementById('cuotaCalculada').textContent = formatCurrency(cuota);
-        
-        // Validar contra capacidad de pago
-        const capacidad = clienteSeleccionado ? parseFloat(clienteSeleccionado.capacidad_pago) : 0;
-        const alertaCuota = document.getElementById('alertaCuota');
-        
-        if (cuota > capacidad && capacidad > 0) {
-            alertaCuota.classList.remove('hidden');
-        } else {
-            alertaCuota.classList.add('hidden');
-        }
-        
-        actualizarResumen();
+// ==========================================
+// FUNCIONES DE GARANTÍAS
+// ==========================================
+
+function seleccionarTipoGarantia(tipo) {
+    tipoGarantiaSeleccionado = tipo;
+    const formGarantia = document.getElementById('formGarantia');
+    if (formGarantia) {
+        formGarantia.innerHTML = renderFormularioGarantia();
+        inicializarEventosPrestamos();
+        calcularMaximoPrestamo();
+        actualizarResumenPrestamo();
     }
 }
 
@@ -464,61 +617,42 @@ function calcularMaximoPrestamo() {
     const cobertura = parseInt(document.getElementById('hipotecaCobertura')?.value) || 70;
     
     const maximo = valor * (cobertura / 100);
-    document.getElementById('maximoPrestar').textContent = formatCurrency(maximo);
-}
-
-// 4. FUNCIONES DE GARANTÍAS
-function seleccionarTipoGarantia(tipo) {
-    tipoGarantiaSeleccionado = tipo;
-    document.getElementById('formGarantia').innerHTML = renderFormularioGarantia();
-    inicializarEventosPrestamos();
-    calcularMaximoPrestamo();
-    actualizarResumen();
+    const maximoPrestar = document.getElementById('maximoPrestar');
+    if (maximoPrestar) {
+        maximoPrestar.textContent = window.formatCurrency ? window.formatCurrency(maximo) : '$' + maximo.toFixed(2);
+    }
 }
 
 function validarDUI(dui, tipo) {
-    if (!VALIDATORS.dui(dui)) {
-        showNotification('Formato de DUI inválido. Use: 00000000-0', 'error');
+    const validators = window.VALIDATORS || {
+        dui: (val) => /^\d{8}-\d{1}$/.test(val)
+    };
+    
+    if (!validators.dui(dui)) {
+        if (window.showNotification) {
+            window.showNotification('Formato de DUI inválido. Use: 00000000-0', 'error');
+        }
         if (tipo === 'fiador') {
-            document.getElementById('fiadorDUI').focus();
+            const fiadorDUI = document.getElementById('fiadorDUI');
+            if (fiadorDUI) fiadorDUI.focus();
         }
         return false;
     }
     return true;
 }
 
-// 5. FUNCIONES DE RESUMEN Y OTORGAMIENTO
-function actualizarResumen() {
-    // Cliente
-    document.getElementById('resumenCliente').textContent = 
-        clienteSeleccionado ? clienteSeleccionado.nombre : 'No seleccionado';
-    
-    // Monto
-    const monto = parseFloat(document.getElementById('monto')?.value) || 0;
-    document.getElementById('resumenMonto').textContent = formatCurrency(monto);
-    
-    // Garantía
-    let garantiaTexto = 'No seleccionada';
-    if (tipoGarantiaSeleccionado === 'fiador') {
-        const nombreFiador = document.getElementById('fiadorNombre')?.value || '';
-        garantiaTexto = nombreFiador ? `Fiador: ${nombreFiador}` : 'Fiador (sin datos)';
-    } else {
-        const matricula = document.getElementById('hipotecaMatricula')?.value || '';
-        garantiaTexto = matricula ? `Hipoteca: ${matricula}` : 'Hipoteca (sin datos)';
-    }
-    document.getElementById('resumenGarantia').textContent = garantiaTexto;
-    
-    // Cuota
-    const cuotaElement = document.getElementById('cuotaCalculada');
-    const cuotaTexto = cuotaElement ? cuotaElement.textContent : '$0.00';
-    document.getElementById('resumenCuota').textContent = cuotaTexto;
-}
+// ==========================================
+// FUNCIONES DE VALIDACIÓN Y OTORGAMIENTO
+// ==========================================
 
 async function validarYOtorgarCredito() {
     // 1. Validar cliente seleccionado
     if (!clienteSeleccionado) {
-        showNotification('Debe seleccionar un cliente', 'error');
-        document.getElementById('buscarCliente').focus();
+        if (window.showNotification) {
+            window.showNotification('Debe seleccionar un cliente', 'error');
+        }
+        const buscarCliente = document.getElementById('buscarCliente');
+        if (buscarCliente) buscarCliente.focus();
         return;
     }
     
@@ -528,17 +662,22 @@ async function validarYOtorgarCredito() {
     const tasa = parseFloat(document.getElementById('tasa').value) || 0;
     
     if (monto <= 0 || plazo <= 0 || tasa <= 0) {
-        showNotification('Complete todos los datos del crédito', 'error');
+        if (window.showNotification) {
+            window.showNotification('Complete todos los datos del crédito', 'error');
+        }
         return;
     }
     
     // 3. Validar cuota vs capacidad
     const capacidad = parseFloat(clienteSeleccionado.capacidad_pago);
-    const tasaMensual = (tasa / 100) / 12;
-    const cuota = (monto * tasaMensual) / (1 - Math.pow(1 + tasaMensual, -plazo));
+    const cuota = window.calcularCuota ? window.calcularCuota(monto, tasa, plazo) : 
+                 (monto * (tasa/100/12)) / (1 - Math.pow(1 + (tasa/100/12), -plazo));
     
     if (cuota > capacidad) {
-        showNotification(`La cuota (${formatCurrency(cuota)}) excede la capacidad de pago del cliente (${formatCurrency(capacidad)})`, 'error');
+        const mensaje = `La cuota (${window.formatCurrency ? window.formatCurrency(cuota) : '$' + cuota.toFixed(2)}) excede la capacidad de pago del cliente (${window.formatCurrency ? window.formatCurrency(capacidad) : '$' + capacidad.toFixed(2)})`;
+        if (window.showNotification) {
+            window.showNotification(mensaje, 'error');
+        }
         return;
     }
     
@@ -553,7 +692,8 @@ async function validarYOtorgarCredito() {
     }
     
     // 5. Confirmar otorgamiento
-    if (!confirm(`¿Confirmar otorgamiento de crédito por ${formatCurrency(monto)} a ${clienteSeleccionado.nombre}?`)) {
+    const mensajeConfirmacion = `¿Confirmar otorgamiento de crédito por ${window.formatCurrency ? window.formatCurrency(monto) : '$' + monto.toFixed(2)} a ${clienteSeleccionado.nombre}?`;
+    if (!confirm(mensajeConfirmacion)) {
         return;
     }
     
@@ -570,29 +710,38 @@ async function validarYOtorgarCredito() {
     
     // 7. Enviar al servidor
     try {
-        showLoading();
-        const response = await apiCall('prestamos.php', 'POST', datosCredito);
+        if (window.showLoading) window.showLoading();
+        
+        const response = await window.apiCall ? await window.apiCall('prestamos.php', 'POST', datosCredito) : {error: 'API no disponible'};
         
         if (response.success) {
-            showNotification('¡Crédito otorgado exitosamente!', 'success');
-            limpiarFormulario();
+            if (window.showNotification) {
+                window.showNotification('¡Crédito otorgado exitosamente!', 'success');
+            }
+            limpiarFormularioPrestamo();
             cargarListaPrestamos(); // Mostrar la lista actualizada
         } else {
-            showNotification(response.error || 'Error al otorgar el crédito', 'error');
+            if (window.showNotification) {
+                window.showNotification(response.error || 'Error al otorgar el crédito', 'error');
+            }
         }
     } catch (error) {
-        showNotification('Error de conexión con el servidor', 'error');
         console.error('Error:', error);
+        if (window.showNotification) {
+            window.showNotification('Error de conexión con el servidor', 'error');
+        }
     }
 }
 
 function validarFiador() {
-    const nombre = document.getElementById('fiadorNombre').value.trim();
-    const dui = document.getElementById('fiadorDUI').value.trim();
-    const ingresos = parseFloat(document.getElementById('fiadorIngresos').value) || 0;
+    const nombre = document.getElementById('fiadorNombre')?.value.trim() || '';
+    const dui = document.getElementById('fiadorDUI')?.value.trim() || '';
+    const ingresos = parseFloat(document.getElementById('fiadorIngresos')?.value) || 0;
     
     if (!nombre || !dui || ingresos <= 0) {
-        showNotification('Complete los datos requeridos del fiador', 'error');
+        if (window.showNotification) {
+            window.showNotification('Complete los datos requeridos del fiador', 'error');
+        }
         return null;
     }
     
@@ -604,26 +753,28 @@ function validarFiador() {
         tipo: 'fiador',
         nombre_completo: nombre,
         dui: dui,
-        nit: document.getElementById('fiadorNIT').value.trim(),
-        telefono: document.getElementById('fiadorTelefono').value.trim(),
+        nit: document.getElementById('fiadorNIT')?.value.trim() || '',
+        telefono: document.getElementById('fiadorTelefono')?.value.trim() || '',
         ingresos_mensuales: ingresos,
-        egresos_mensuales: parseFloat(document.getElementById('fiadorEgresos').value) || 0,
-        direccion: document.getElementById('fiadorDireccion').value.trim(),
-        parentesco_cliente: document.getElementById('fiadorParentesco').value
+        egresos_mensuales: parseFloat(document.getElementById('fiadorEgresos')?.value) || 0,
+        direccion: document.getElementById('fiadorDireccion')?.value.trim() || '',
+        parentesco_cliente: document.getElementById('fiadorParentesco')?.value || ''
     };
 }
 
 function validarHipoteca() {
-    const matricula = document.getElementById('hipotecaMatricula').value.trim();
-    const tipo = document.getElementById('hipotecaTipo').value;
-    const grado = document.getElementById('hipotecaGrado').value;
-    const ubicacion = document.getElementById('hipotecaUbicacion').value.trim();
-    const descripcion = document.getElementById('hipotecaDescripcion').value.trim();
-    const valor = parseFloat(document.getElementById('hipotecaValor').value) || 0;
-    const fechaAvaluo = document.getElementById('hipotecaFechaAvaluo').value;
+    const matricula = document.getElementById('hipotecaMatricula')?.value.trim() || '';
+    const tipo = document.getElementById('hipotecaTipo')?.value || '';
+    const grado = document.getElementById('hipotecaGrado')?.value || '';
+    const ubicacion = document.getElementById('hipotecaUbicacion')?.value.trim() || '';
+    const descripcion = document.getElementById('hipotecaDescripcion')?.value.trim() || '';
+    const valor = parseFloat(document.getElementById('hipotecaValor')?.value) || 0;
+    const fechaAvaluo = document.getElementById('hipotecaFechaAvaluo')?.value || '';
     
     if (!matricula || !tipo || !grado || !ubicacion || !descripcion || valor <= 0 || !fechaAvaluo) {
-        showNotification('Complete todos los datos requeridos de la hipoteca', 'error');
+        if (window.showNotification) {
+            window.showNotification('Complete todos los datos requeridos de la hipoteca', 'error');
+        }
         return null;
     }
     
@@ -631,7 +782,9 @@ function validarHipoteca() {
     const hoy = new Date();
     const fechaAvaluoDate = new Date(fechaAvaluo);
     if (fechaAvaluoDate > hoy) {
-        showNotification('La fecha del avalúo no puede ser futura', 'error');
+        if (window.showNotification) {
+            window.showNotification('La fecha del avalúo no puede ser futura', 'error');
+        }
         return null;
     }
     
@@ -651,143 +804,252 @@ function validarHipoteca() {
         grado_hipoteca: grado,
         ubicacion_inmueble: ubicacion,
         descripcion_inmueble: descripcion,
-        area_terreno: parseFloat(document.getElementById('hipotecaAreaTerreno').value) || null,
-        area_construccion: parseFloat(document.getElementById('hipotecaAreaConstruccion').value) || null,
+        area_terreno: parseFloat(document.getElementById('hipotecaAreaTerreno')?.value) || null,
+        area_construccion: parseFloat(document.getElementById('hipotecaAreaConstruccion')?.value) || null,
         valor_avaluo: valor,
         fecha_avaluo: fechaAvaluo,
-        porcentaje_cobertura: parseInt(document.getElementById('hipotecaCobertura').value) || 70
+        porcentaje_cobertura: parseInt(document.getElementById('hipotecaCobertura')?.value) || 70
     };
 }
 
-// 6. FUNCIONES DE LISTADO
+// ==========================================
+// FUNCIONES DE LISTADO
+// ==========================================
+
+// Reemplaza la función completa cargarListaPrestamos() en prestamos.js:
+
 async function cargarListaPrestamos() {
     try {
-        showLoading();
-        const response = await apiCall('prestamos.php?listar=activos');
+        console.log('🔍 Iniciando carga de préstamos...');
         
-        if (response.error) {
-            showNotification(response.error, 'error');
+        // Mostrar loading
+        const mainContent = document.getElementById('main-content');
+        if (mainContent) {
+            mainContent.innerHTML = `
+                <div class="flex justify-center items-center h-64">
+                    <div class="text-center">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                        <p class="text-gray-600">Cargando créditos activos...</p>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Intentar llamar a la API
+        let response;
+        try {
+            response = await fetch('api/prestamos.php');
+            console.log('📡 Status de respuesta:', response.status);
+            
+            if (!response.ok) {
+                throw new Error(`Error ${response.status}: ${response.statusText}`);
+            }
+            
+            response = await response.json();
+            console.log('📦 Datos recibidos:', response);
+            
+        } catch (fetchError) {
+            console.error('❌ Error en fetch:', fetchError);
+            
+            // Mostrar error
+            if (mainContent) {
+                mainContent.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-8 text-center max-w-2xl mx-auto">
+                        <i class="fas fa-exclamation-triangle text-red-500 text-4xl mb-4"></i>
+                        <h3 class="text-xl font-bold text-red-800 mb-2">Error de conexión</h3>
+                        <p class="text-red-600 mb-4">No se pudo cargar la lista de créditos.</p>
+                        <p class="text-gray-600 text-sm mb-6">Error: ${fetchError.message}</p>
+                        <div class="space-x-4">
+                            <button onclick="cargarListaPrestamos()" class="btn btn-secondary">
+                                <i class="fas fa-redo mr-2"></i> Reintentar
+                            </button>
+                            <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                                <i class="fas fa-arrow-left mr-2"></i> Volver
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
             return;
         }
         
-        document.getElementById('listaPrestamos').classList.remove('hidden');
-        document.querySelectorAll('.grid').forEach(el => {
-            if (el.id !== 'listaPrestamos') el.classList.add('hidden');
-        });
+        // Verificar si hay datos
+        if (!response || response.length === 0) {
+            if (mainContent) {
+                mainContent.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="flex justify-between items-center">
+                            <h2 class="text-2xl font-bold text-gray-800">Créditos Activos</h2>
+                            <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                                <i class="fas fa-arrow-left mr-2"></i> Volver
+                            </button>
+                        </div>
+                        
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-8 text-center">
+                            <i class="fas fa-credit-card text-blue-500 text-4xl mb-4"></i>
+                            <h4 class="text-lg font-semibold text-blue-800 mb-2">No hay créditos registrados</h4>
+                            <p class="text-blue-600 mb-6">Aún no se han otorgado créditos en el sistema.</p>
+                            <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                                <i class="fas fa-plus mr-2"></i> Otorgar primer crédito
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+            return;
+        }
         
-        const tablaHTML = `
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Monto</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cuota</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Saldo</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Garantía</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        ${response.map(prestamo => `
-                            <tr>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-medium text-gray-900">${prestamo.cliente_nombre}</div>
-                                    <div class="text-sm text-gray-500">${prestamo.codigo_cliente}</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-semibold text-gray-900">${formatCurrency(prestamo.monto)}</div>
-                                    <div class="text-xs text-gray-500">${prestamo.plazo} meses</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-semibold text-blue-600">${formatCurrency(prestamo.cuota)}</div>
-                                    <div class="text-xs text-gray-500">${prestamo.tasa}% anual</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm font-bold ${parseFloat(prestamo.saldo_actual) > 0 ? 'text-gray-900' : 'text-green-600'}">
-                                        ${formatCurrency(prestamo.saldo_actual)}
-                                    </div>
-                                    ${prestamo.dias_mora > 0 ? `
-                                        <div class="text-xs text-red-600">
-                                            <i class="fas fa-exclamation-triangle"></i> ${prestamo.dias_mora} días en mora
-                                        </div>
-                                    ` : ''}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <div class="text-sm text-gray-900">${prestamo.tipo_garantia || 'Sin garantía'}</div>
-                                    <div class="text-xs text-gray-500 truncate max-w-xs">${prestamo.descripcion_garantia || ''}</div>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    ${getBadgeEstado(prestamo.estado || 'normal')}
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                    <button onclick="verDetallesPrestamo(${prestamo.id})" class="text-blue-600 hover:text-blue-900 mr-3">
-                                        <i class="fas fa-eye"></i>
-                                    </button>
-                                    <button onclick="registrarPago(${prestamo.id})" class="text-green-600 hover:text-green-900">
-                                        <i class="fas fa-dollar-sign"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
-        
-        document.getElementById('tablaPrestamosContainer').innerHTML = tablaHTML;
+        // Mostrar los datos
+        if (mainContent) {
+            // Crear tabla simple
+            let tablaHTML = `
+                <div class="space-y-6">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-2xl font-bold text-gray-800">Créditos Activos (${response.length})</h2>
+                        <div class="space-x-2">
+                            <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                                <i class="fas fa-plus mr-2"></i> Nuevo Crédito
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <p class="text-sm text-gray-600">Cartera Total</p>
+                            <p class="text-2xl font-bold text-gray-900">
+                                ${formatCurrency(response.reduce((sum, p) => sum + parseFloat(p.saldo_actual || 0), 0))}
+                            </p>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <p class="text-sm text-gray-600">Préstamos Activos</p>
+                            <p class="text-2xl font-bold text-blue-600">${response.length}</p>
+                        </div>
+                        <div class="bg-white rounded-lg shadow p-4">
+                            <p class="text-sm text-gray-600">En Mora</p>
+                            <p class="text-2xl font-bold text-red-600">
+                                ${response.filter(p => p.dias_mora > 0).length}
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-lg shadow overflow-hidden">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cliente</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monto</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Saldo</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-200">
+            `;
+            
+            response.forEach(prestamo => {
+                tablaHTML += `
+                    <tr>
+                        <td class="px-4 py-3">
+                            <div class="font-medium text-gray-900">${prestamo.cliente_nombre || 'N/A'}</div>
+                            <div class="text-sm text-gray-500">${prestamo.codigo_cliente || 'N/A'}</div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <div class="font-medium">${formatCurrency(prestamo.monto)}</div>
+                            <div class="text-sm text-gray-500">${prestamo.plazo} meses</div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <div class="font-bold ${parseFloat(prestamo.saldo_actual) > 0 ? 'text-gray-900' : 'text-green-600'}">
+                                ${formatCurrency(prestamo.saldo_actual)}
+                            </div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full ${prestamo.estado === 'normal' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                ${prestamo.estado || 'normal'}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tablaHTML += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="text-center">
+                        <button onclick="loadPrestamosModule()" class="btn btn-primary">
+                            <i class="fas fa-arrow-left mr-2"></i> Volver al formulario
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            mainContent.innerHTML = tablaHTML;
+        }
         
     } catch (error) {
-        console.error('Error cargando préstamos:', error);
-        showNotification('Error al cargar la lista de créditos', 'error');
+        console.error('❌ Error fatal:', error);
+        alert('Error al cargar los créditos: ' + error.message);
+        loadPrestamosModule(); // Volver al formulario
     }
 }
 
 function mostrarFormularioNuevo() {
-    document.getElementById('listaPrestamos').classList.add('hidden');
+    const listaPrestamos = document.getElementById('listaPrestamos');
+    if (listaPrestamos) listaPrestamos.classList.add('hidden');
+    
+    // Mostrar todos los grids
     document.querySelectorAll('.grid').forEach(el => {
-        if (el.id !== 'listaPrestamos') el.classList.remove('hidden');
+        if (el.classList.contains('grid')) {
+            el.classList.remove('hidden');
+        }
     });
 }
 
-// 7. FUNCIONES AUXILIARES
-function limpiarFormulario() {
-    // Limpiar selección de cliente
-    clienteSeleccionado = null;
-    document.getElementById('infoCliente').classList.add('hidden');
-    document.getElementById('buscarCliente').value = '';
-    document.getElementById('resultadosClientes').innerHTML = '';
-    
-    // Limpiar formulario de crédito
-    document.getElementById('formPrestamo').reset();
-    document.getElementById('cuotaCalculada').textContent = '$0.00';
-    document.getElementById('alertaCuota').classList.add('hidden');
-    document.getElementById('capacidadMaxima').textContent = '$0.00';
-    
-    // Limpiar formulario de garantía
-    if (tipoGarantiaSeleccionado === 'fiador') {
-        document.getElementById('formFiador').reset();
-    } else {
-        document.getElementById('formHipoteca').reset();
-        const hoy = new Date().toISOString().split('T')[0];
-        document.getElementById('hipotecaFechaAvaluo').value = hoy;
-        document.getElementById('hipotecaCobertura').value = 70;
-        document.getElementById('coberturaValue').textContent = '70%';
-        document.getElementById('maximoPrestar').textContent = '$0.00';
-    }
-    
-    actualizarResumen();
-}
+// ==========================================
+// FUNCIONES FUTURAS (placeholder)
+// ==========================================
 
-// 8. FUNCIONES FUTURAS (placeholder)
 function verDetallesPrestamo(id) {
-    showNotification(`Funcionalidad en desarrollo: Ver detalles del préstamo #${id}`, 'info');
+    if (window.showNotification) {
+        window.showNotification(`Funcionalidad en desarrollo: Ver detalles del préstamo #${id}`, 'info');
+    }
 }
 
 function registrarPago(id) {
-    showNotification(`Funcionalidad en desarrollo: Registrar pago para préstamo #${id}`, 'info');
+    if (window.showNotification) {
+        window.showNotification(`Funcionalidad en desarrollo: Registrar pago para préstamo #${id}`, 'info');
+    }
 }
 
+// ==========================================
 // Hacer la función accesible globalmente
+// ==========================================
+
 window.loadPrestamosModule = loadPrestamosModule;
+window.calcularCuotaPrestamo = calcularCuotaPrestamo;
+window.actualizarResumenPrestamo = actualizarResumenPrestamo;
+window.limpiarFormularioPrestamo = limpiarFormularioPrestamo;
+window.buscarClientesNaturales = buscarClientesNaturales;
+window.seleccionarCliente = seleccionarCliente;
+window.deseleccionarCliente = deseleccionarCliente;
+window.seleccionarTipoGarantia = seleccionarTipoGarantia;
+window.validarDUI = validarDUI;
+window.validarYOtorgarCredito = validarYOtorgarCredito;
+window.cargarListaPrestamos = cargarListaPrestamos;
+window.mostrarFormularioNuevo = mostrarFormularioNuevo;
+window.verDetallesPrestamo = verDetallesPrestamo;
+window.registrarPago = registrarPago;
+
+
+// Agrega esta función al final de prestamos.js:
+
+function verGarantiasPrestamo(id) {
+    if (window.showNotification) {
+        window.showNotification(`Funcionalidad en desarrollo: Ver garantías del préstamo #${id}`, 'info');
+    }
+}
+
+// No olvides exportarla:
+window.verGarantiasPrestamo = verGarantiasPrestamo;
