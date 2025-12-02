@@ -195,6 +195,7 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
     </div>
 
     <script src="js/main.js"></script>
+    <script src="js/app.js"></script>
     <script src="js/modules/dashboard.js"></script>
     <script src="js/modules/clientes.js"></script>
     <script src="js/modules/prestamos.js"></script>
