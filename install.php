@@ -362,6 +362,7 @@ try {
         monto_aprobado DECIMAL(15,2) NOT NULL,
         monto_entregado DECIMAL(15,2) NOT NULL, -- Puede ser menor por comisiones iniciales
         saldo_capital DECIMAL(15,2) NOT NULL,
+        interes_pendiente DECIMAL(15,2) DEFAULT 0.00,
         saldo_mora DECIMAL(15,2) DEFAULT 0.00,
         
         -- Condiciones
