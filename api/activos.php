@@ -19,10 +19,15 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+$action = $_GET['action'] ?? '';
 
 switch ($method) {
     case 'GET':
-        getActivos($pdo);
+        if ($action === 'bajas') {
+            getBajasActivos($pdo);
+        } else {
+            getActivos($pdo);
+        }
         break;
     case 'POST':
         createActivo($pdo);
@@ -45,6 +50,30 @@ function getActivos($pdo) {
         ");
         $activos = $stmt->fetchAll(PDO::FETCH_ASSOC);
         echo json_encode($activos);
+    } catch(PDOException $e) {
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+}
+
+function getBajasActivos($pdo) {
+    try {
+        $stmt = $pdo->query("
+            SELECT 
+                b.*, 
+                a.descripcion,
+                a.codigo,
+                a.valor as valor_original,
+                a.fecha_compra,
+                a.tipo,
+                a.unidad,
+                a.institucion,
+                DATE(b.fecha_baja) as fecha_baja_formatted
+            FROM bajas_activos b
+            JOIN activos a ON b.activo_id = a.id
+            ORDER BY b.fecha_baja DESC, b.fecha_registro DESC
+        ");
+        $bajas = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        echo json_encode($bajas);
     } catch(PDOException $e) {
         echo json_encode(['error' => $e->getMessage()]);
     }
