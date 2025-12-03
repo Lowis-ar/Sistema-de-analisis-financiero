@@ -15,6 +15,9 @@ try {
     exit;
 }
 
+// Incluir función de amortización
+require_once 'funcion_amortizacion.php';
+
 $method = $_SERVER['REQUEST_METHOD'];
 
 switch ($method) {
@@ -280,14 +283,81 @@ function createPrestamoNatural($pdo) {
             }
         }
         
+        // 5. GENERAR TABLA DE AMORTIZACIÓN AUTOMÁTICAMENTE
+        $fechaPrimerPago = date('Y-m-d', strtotime($fechaDesembolso . ' +1 month'));
+        
+        // Crear tabla si no existe
+        $pdo->exec("CREATE TABLE IF NOT EXISTS amortizacion_frances (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            prestamo_id INT NOT NULL,
+            numero_cuota INT NOT NULL,
+            fecha_vencimiento DATE NOT NULL,
+            capital_cuota DECIMAL(15,2) NOT NULL,
+            interes_cuota DECIMAL(15,2) NOT NULL,
+            cuota_total DECIMAL(15,2) NOT NULL,
+            saldo_despues DECIMAL(15,2) NOT NULL,
+            estado ENUM('pendiente', 'pagada', 'vencida') DEFAULT 'pendiente',
+            fecha_pago DATE NULL,
+            mora_generada DECIMAL(15,2) DEFAULT 0,
+            FOREIGN KEY (prestamo_id) REFERENCES prestamos(id) ON DELETE CASCADE,
+            INDEX idx_prestamo (prestamo_id),
+            INDEX idx_estado (estado)
+        )");
+        
+        // Generar tabla de amortización
+        $cuotaCalculada = $cuota;
+        $saldo = $monto;
+        
+        for ($i = 1; $i <= $plazo; $i++) {
+            // Calcular intereses del mes
+            $interes = $saldo * $tasaMensual;
+            
+            // Calcular capital de esta cuota
+            $capital = $cuotaCalculada - $interes;
+            
+            // Ajustar última cuota para evitar decimales
+            if ($i == $plazo) {
+                $capital = $saldo;
+                $cuotaCalculada = $capital + $interes;
+            }
+            
+            // Actualizar saldo
+            $saldo = $saldo - $capital;
+            
+            // Calcular fecha de vencimiento
+            $fechaVencimiento = date('Y-m-d', strtotime($fechaDesembolso . " +" . $i . " months"));
+            
+            // Insertar en BD
+            $stmt = $pdo->prepare("
+                INSERT INTO amortizacion_frances 
+                (prestamo_id, numero_cuota, fecha_vencimiento, capital_cuota, 
+                 interes_cuota, cuota_total, saldo_despues, estado)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente')
+            ");
+            
+            $stmt->execute([
+                $prestamo_id,
+                $i,
+                $fechaVencimiento,
+                round($capital, 2),
+                round($interes, 2),
+                round($cuotaCalculada, 2),
+                round($saldo, 2)
+            ]);
+        }
+        
         $pdo->commit();
         
         echo json_encode([
             'success' => true,
             'id' => $prestamo_id,
+            'prestamo_id' => $prestamo_id, // Agregar para que JS lo use
             'message' => 'Préstamo para persona natural creado exitosamente',
             'cuota' => round($cuota, 2),
-            'garantia_tipo' => $data['tipo_garantia'] ?? 'sin_garantia'
+            'garantia_tipo' => $data['tipo_garantia'] ?? 'sin_garantia',
+            'amortizacion_generada' => true,
+            'total_cuotas' => $plazo,
+            'primera_cuota' => date('Y-m-d', strtotime($fechaDesembolso . ' +1 month'))
         ]);
         
     } catch(PDOException $e) {

@@ -55,6 +55,7 @@ try {
     // Crear tabla prestamos
     $conn->exec("CREATE TABLE IF NOT EXISTS prestamos (
         id INT AUTO_INCREMENT PRIMARY KEY,
+        codigo_contrato VARCHAR(50) UNIQUE NULL,
         cliente_id INT NOT NULL,
         tipo VARCHAR(50) NOT NULL,
         monto DECIMAL(15,2) NOT NULL,
@@ -68,6 +69,7 @@ try {
         estado VARCHAR(50) DEFAULT 'normal',
         fecha_otorgamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         ultimo_pago DATETIME NULL,
+        proximo_vencimiento DATE NULL,
         dias_mora INT DEFAULT 0,
         FOREIGN KEY (cliente_id) REFERENCES clientes(id)
     ) ENGINE=InnoDB");
@@ -87,7 +89,22 @@ try {
         FOREIGN KEY (prestamo_id) REFERENCES prestamos(id)
     ) ENGINE=InnoDB");
 
+// Solo 1 tabla nueva esencial
+$conn->exec("CREATE TABLE IF NOT EXISTS conceptos_cobro (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nombre VARCHAR(50) NOT NULL,
+    tipo ENUM('capital', 'interes', 'mora', 'comision') NOT NULL,
+    orden_aplicacion INT DEFAULT 1 COMMENT 'Orden para aplicar el pago: 1=mora, 2=interés, 3=capital',
+    activo TINYINT(1) DEFAULT 1
+) ENGINE=InnoDB");
 
+// Insertar datos básicos
+$conn->exec("INSERT INTO conceptos_cobro (nombre, tipo, orden_aplicacion) VALUES 
+    ('Interés Ordinario', 'interes', 2),
+    ('Mora por Atraso', 'mora', 1),
+    ('Abono a Capital', 'capital', 3),
+    ('Comisión Administrativa', 'comision', 1)
+ON DUPLICATE KEY UPDATE nombre = VALUES(nombre)");
     // ---------------------------------------------------------------------
 // 1. TABLA ACTIVOS
 // ---------------------------------------------------------------------
