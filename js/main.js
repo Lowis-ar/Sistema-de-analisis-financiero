@@ -295,5 +295,43 @@ function showPrestamosMenu() {
     document.getElementById('main-content').innerHTML = content;
 }
 
+function loadModule(modulePath) {
+    showLoading();
+    try {
+        // Remover el script anterior si existe
+        const existingScript = document.querySelector(`script[src="${modulePath}"]`);
+        if (existingScript) {
+            existingScript.remove();
+        }
+        
+        // Cargar el nuevo script
+        const script = document.createElement('script');
+        script.src = modulePath;
+        script.onload = function() {
+            console.log('Módulo cargado:', modulePath);
+        };
+        script.onerror = function() {
+            showModal('Error', 'No se pudo cargar el módulo: ' + modulePath);
+            showDashboard();
+        };
+        
+        document.head.appendChild(script);
+        
+    } catch (error) {
+        console.error('Error al cargar módulo:', error);
+        showModal('Error', 'Error al cargar el módulo');
+        showDashboard();
+    }
+}
+
+// Función específica para cobros naturales
+function loadCobrosNaturalesModule() {
+    loadModule('js/modules/cobros_naturales.js');
+}
+
+// Hacer funciones disponibles globalmente
+window.loadModule = loadModule;
+window.loadCobrosNaturalesModule = loadCobrosNaturalesModule;
+
 // Hacer función disponible globalmente
 window.showPrestamosMenu = showPrestamosMenu;
