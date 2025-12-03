@@ -134,9 +134,7 @@ function renderGarantiasList(garantias) {
         }[estado] || 'bg-gray-100';
 
         return `
-            <div class="card hover:shadow-lg transition-shadow border-t-4 border-blue-500 cursor-pointer relative group"
-                 onclick="editGarantia(${g.id})"> 
-                
+            <div class="card hover:shadow-lg transition-shadow border-t-4 border-blue-500 cursor-pointer relative group">
                 <div class="flex justify-between items-start mb-2">
                     <span class="text-xs font-mono text-gray-400">${g.codigo_interno || 'N/A'}</span>
                     <span class="px-2 py-0.5 text-xs rounded-full border ${badgeClass} uppercase font-bold">
@@ -156,6 +154,15 @@ function renderGarantiasList(garantias) {
                 <div class="border-t mt-3 pt-2 flex justify-between items-center">
                     <span class="text-xs text-gray-500">Valor Realización</span>
                     <span class="font-bold text-blue-700">${formatCurrency(valReal)}</span>
+                </div>
+
+                <div class="absolute top-2 right-2 flex gap-2">
+                    <button onclick="editGarantia(${g.id})" class="text-blue-600 hover:text-blue-800" title="Editar">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button onclick="deleteGarantia(${g.id})" class="text-red-600 hover:text-red-800" title="Eliminar">
+                        <i class="fas fa-trash"></i>
+                    </button>
                 </div>
             </div>
         `;
@@ -209,9 +216,18 @@ async function showGarantiaForm(garantia = null) {
 }
 
 function renderFormHTML(data, clientes, tipos) {
+    // Valores por defecto
     const valComercial = data ? data.valor_comercial : 0;
     const valRealizacion = data ? data.valor_realizacion : 0;
     
+    // Datos de Seguro y Perito
+    const aseguradora = data ? (data.aseguradora || '') : '';
+    const poliza = data ? (data.numero_poliza || '') : '';
+    const venceSeguro = data ? (data.fecha_vencimiento_seguro || '') : '';
+    
+    // Intentamos obtener el perito si estamos editando (aunque la vista listado no lo trae por defecto, lo dejamos opcional)
+    const perito = data ? (data.ultimo_perito || '') : '';
+
     const clientesOptions = Array.isArray(clientes) ? clientes.map(c => 
         `<option value="${c.id}" ${data && data.cliente_id == c.id ? 'selected' : ''}>
             ${c.codigo} - ${c.nombre || c.razon_social}
@@ -229,59 +245,111 @@ function renderFormHTML(data, clientes, tipos) {
             <form id="formGarantia" onsubmit="saveGarantia(event)">
                 <input type="hidden" id="garantiaId" value="${data ? data.id : ''}">
                 
-                <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">1. Datos del Bien</h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div class="input-group">
-                        <label>Cliente *</label>
-                        <select id="cliente_id" class="w-full p-2 border rounded" required>
-                            <option value="">-- Seleccionar --</option>
-                            ${clientesOptions}
-                        </select>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <!-- COLUMNA 1: DATOS GENERALES -->
+                    <div>
+                        <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">1. Identificación del Activo</h4>
+                        
+                        <div class="input-group mb-4">
+                            <label>Cliente Propietario *</label>
+                            <select id="cliente_id" class="w-full p-2 border rounded" required>
+                                <option value="">-- Seleccionar --</option>
+                                ${clientesOptions}
+                            </select>
+                        </div>
+
+                        <div class="input-group mb-4">
+                            <label>Tipo de Garantía *</label>
+                            <select id="tipo_garantia_id" class="w-full p-2 border rounded" required>
+                                ${tiposOptions}
+                            </select>
+                        </div>
+
+                        <div class="input-group mb-4">
+                            <label>Descripción Detallada *</label>
+                            <textarea id="descripcion_bien" class="w-full p-2 border rounded" rows="3" required 
+                                placeholder="Ejemplo: Marca, Modelo, Serie, Color...">${data ? data.descripcion_bien : ''}</textarea>
+                        </div>
+
+                        <div class="input-group mb-4">
+                            <label>Ubicación Física</label>
+                            <input type="text" id="ubicacion_fisica" class="w-full p-2 border rounded" 
+                                placeholder="Ejemplo: Calle 123, Ciudad" value="${data ? data.ubicacion_fisica : ''}">
+                        </div>
                     </div>
-                    <div class="input-group">
-                        <label>Tipo de Garantía *</label>
-                        <select id="tipo_garantia_id" class="w-full p-2 border rounded" required>
-                            ${tiposOptions}
-                        </select>
+
+                    <!-- COLUMNA 2: VALORACIÓN Y LEGAL -->
+                    <div>
+                        <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">2. Valoración y Cobertura</h4>
+                        
+                        <div class="grid grid-cols-2 gap-4 mb-4">
+                            <div class="input-group">
+                                <label>Valor Comercial $ *</label>
+                                <input type="number" id="valor_comercial" class="w-full p-2 border rounded font-bold text-blue-900" 
+                                    placeholder="Ejemplo: 10000.00" value="${valComercial}" step="0.01" min="0" required oninput="updateCalculosGarantia()">
+                            </div>
+                            <div class="input-group">
+                                <label>Valor Realización $</label>
+                                <input type="number" id="valor_realizacion" class="w-full p-2 border rounded bg-gray-100 font-bold" 
+                                    placeholder="Calculado automáticamente" value="${valRealizacion}" readonly>
+                            </div>
+                        </div>
+
+                        <div class="input-group mb-4">
+                            <label>Perito Valuador / Responsable *</label>
+                            <input type="text" id="perito_nombre" class="w-full p-2 border rounded" 
+                                placeholder="Ejemplo: Juan Pérez" value="${perito}" required>
+                        </div>
+
+                        <div class="input-group mb-4">
+                            <label>Número Registro Perito</label>
+                            <input type="text" id="numero_registro_perito" class="w-full p-2 border rounded" 
+                                placeholder="Ejemplo: REG-12345" value="${data ? (data.numero_registro_perito || '') : ''}">
+                        </div>
+
+                        <div class="bg-yellow-50 p-3 rounded border border-yellow-200 mb-4">
+                            <p class="text-xs font-bold text-yellow-800 mb-2"><i class="fas fa-shield-alt"></i> Póliza de Seguro (Opcional)</p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <input type="text" id="aseguradora" class="w-full p-1 border rounded text-sm" 
+                                    placeholder="Ejemplo: Aseguradora XYZ" value="${aseguradora}">
+                                <input type="text" id="numero_poliza" class="w-full p-1 border rounded text-sm" 
+                                    placeholder="Ejemplo: POL-12345" value="${poliza}">
+                                <div class="col-span-2">
+                                    <label class="text-xs">Vencimiento:</label>
+                                    <input type="date" id="fecha_vencimiento_seguro" class="w-full p-1 border rounded text-sm" 
+                                        value="${venceSeguro}">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <h4 class="font-bold text-gray-700 border-b pb-2 mb-2">3. Estado Legal</h4>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="input-group">
+                                <label>Folio RUG</label>
+                                <input type="text" id="folio_rug" class="w-full p-2 border rounded" 
+                                    placeholder="Ejemplo: FOL-12345" value="${data ? (data.folio_rug || '') : ''}">
+                            </div>
+                            <div class="input-group">
+                                <label>Fecha Inscripción RUG</label>
+                                <input type="date" id="fecha_inscripcion_rug" class="w-full p-2 border rounded" 
+                                    value="${data ? (data.fecha_inscripcion_rug || '') : ''}">
+                            </div>
+                            <div class="input-group">
+                                <label>Estado</label>
+                                <select id="estado" class="w-full p-2 border rounded">
+                                    <option value="tramite" ${data && data.estado === 'tramite' ? 'selected' : ''}>En Trámite</option>
+                                    <option value="vigente" ${data && data.estado === 'vigente' ? 'selected' : ''}>Vigente</option>
+                                    <option value="deteriorada" ${data && data.estado === 'deteriorada' ? 'selected' : ''}>Deteriorada</option>
+                                    <option value="liberada" ${data && data.estado === 'liberada' ? 'selected' : ''}>Liberada</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
-                </div>
-                <div class="input-group mb-4">
-                    <label>Descripción</label>
-                    <textarea id="descripcion_bien" class="w-full p-2 border rounded" rows="2" required>${data ? data.descripcion_bien : ''}</textarea>
                 </div>
 
-                <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">2. Valoración</h4>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    <div class="input-group">
-                        <label>Valor Comercial $</label>
-                        <input type="number" id="valor_comercial" class="w-full p-2 border rounded" 
-                            value="${valComercial}" step="0.01" required oninput="updateCalculosGarantia()">
-                    </div>
-                    <div class="input-group">
-                        <label>Realización (Automático)</label>
-                        <input type="number" id="valor_realizacion" class="w-full p-2 border rounded bg-gray-100" 
-                            value="${valRealizacion}" readonly>
-                    </div>
-                </div>
-
-                <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">3. Seguro (Opcional)</h4>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-yellow-50 p-4 rounded border border-yellow-100">
-                    <div class="input-group">
-                        <label>Aseguradora</label>
-                        <input type="text" id="aseguradora" class="w-full p-2 border rounded bg-white">
-                    </div>
-                    <div class="input-group">
-                        <label>No. Póliza</label>
-                        <input type="text" id="numero_poliza" class="w-full p-2 border rounded bg-white">
-                    </div>
-                    <div class="input-group">
-                        <label>Vencimiento</label>
-                        <input type="date" id="fecha_vencimiento_seguro" class="w-full p-2 border rounded bg-white">
-                    </div>
-                </div>
-
-                <div class="flex gap-4 pt-4 border-t">
-                    <button type="submit" class="btn btn-success flex-1">Guardar</button>
+                <div class="flex gap-4 pt-4 border-t mt-4">
+                    <button type="submit" class="btn btn-success flex-1"><i class="fas fa-save mr-2"></i> Guardar Garantía</button>
                     <button type="button" onclick="loadGarantiasModule()" class="btn btn-secondary flex-1">Cancelar</button>
                 </div>
             </form>
@@ -304,35 +372,139 @@ async function editGarantia(id) {
 
 async function saveGarantia(event) {
     event.preventDefault();
-    
+
+    const garantiaId = document.getElementById('garantiaId').value;
+
+    // Validaciones de campos
+    const clienteId = document.getElementById('cliente_id').value;
+    if (!clienteId) {
+        showModal('Error', 'Debe seleccionar un cliente.');
+        return;
+    }
+
+    const tipoGarantiaId = document.getElementById('tipo_garantia_id').value;
+    if (!tipoGarantiaId) {
+        showModal('Error', 'Debe seleccionar un tipo de garantía.');
+        return;
+    }
+
+    const descripcionBien = document.getElementById('descripcion_bien').value.trim();
+    if (!descripcionBien) {
+        showModal('Error', 'Debe ingresar una descripción del bien.');
+        return;
+    }
+
+    const valorComercial = parseFloat(document.getElementById('valor_comercial').value);
+    if (isNaN(valorComercial) || valorComercial <= 0) {
+        showModal('Error', 'El valor comercial debe ser un número mayor a 0.');
+        return;
+    }
+
+    const peritoNombre = document.getElementById('perito_nombre').value.trim();
+    if (!peritoNombre) {
+        showModal('Error', 'Debe ingresar el nombre del perito valuador.');
+        return;
+    }
+
+    const numeroRegistroPerito = document.getElementById('numero_registro_perito').value.trim();
+    if (numeroRegistroPerito && !/^[a-zA-Z0-9-]+$/.test(numeroRegistroPerito)) {
+        showModal('Error', 'El número de registro del perito contiene caracteres inválidos.');
+        return;
+    }
+
+    const aseguradora = document.getElementById('aseguradora').value.trim();
+    const numeroPoliza = document.getElementById('numero_poliza').value.trim();
+    const fechaVencimientoSeguro = document.getElementById('fecha_vencimiento_seguro').value;
+
+    if (aseguradora || numeroPoliza || fechaVencimientoSeguro) {
+        if (!aseguradora) {
+            showModal('Error', 'Debe ingresar el nombre de la aseguradora.');
+            return;
+        }
+        if (!numeroPoliza) {
+            showModal('Error', 'Debe ingresar el número de póliza.');
+            return;
+        }
+        if (!fechaVencimientoSeguro) {
+            showModal('Error', 'Debe ingresar la fecha de vencimiento del seguro.');
+            return;
+        }
+    }
+
+    const folioRug = document.getElementById('folio_rug').value.trim();
+    if (folioRug && !/^[a-zA-Z0-9-]+$/.test(folioRug)) {
+        showModal('Error', 'El folio RUG contiene caracteres inválidos.');
+        return;
+    }
+
+    const fechaInscripcionRug = document.getElementById('fecha_inscripcion_rug').value;
+    if (fechaInscripcionRug && isNaN(Date.parse(fechaInscripcionRug))) {
+        showModal('Error', 'La fecha de inscripción RUG no es válida.');
+        return;
+    }
+
+    const estado = document.getElementById('estado').value;
+    if (!['tramite', 'vigente', 'deteriorada', 'liberada'].includes(estado)) {
+        showModal('Error', 'El estado seleccionado no es válido.');
+        return;
+    }
+
+    // Construcción del payload
     const payload = {
-        cliente_id: document.getElementById('cliente_id').value,
-        tipo_garantia_id: document.getElementById('tipo_garantia_id').value,
-        descripcion_bien: document.getElementById('descripcion_bien').value,
-        valor_comercial: document.getElementById('valor_comercial').value,
+        cliente_id: clienteId,
+        tipo_garantia_id: tipoGarantiaId,
+        descripcion_bien: descripcionBien,
+        ubicacion_fisica: document.getElementById('ubicacion_fisica').value.trim(),
+        valor_comercial: valorComercial,
         valor_realizacion: document.getElementById('valor_realizacion').value,
-        // Datos Seguro
-        aseguradora: document.getElementById('aseguradora').value,
-        numero_poliza: document.getElementById('numero_poliza').value,
-        fecha_vencimiento_seguro: document.getElementById('fecha_vencimiento_seguro').value
+        perito_nombre: peritoNombre,
+        aseguradora: aseguradora,
+        numero_poliza: numeroPoliza,
+        fecha_vencimiento_seguro: fechaVencimientoSeguro,
+        folio_rug: folioRug,
+        fecha_inscripcion_rug: fechaInscripcionRug,
+        numero_registro_perito: numeroRegistroPerito,
+        estado: estado
     };
 
     const btn = event.target.querySelector('button[type="submit"]');
     btn.disabled = true;
 
     try {
-        const result = await apiCall('garantias.php', 'POST', payload);
+        let result;
+        if (garantiaId) {
+            payload.id = garantiaId;
+            result = await apiCall('garantias.php', 'PUT', payload);
+        } else {
+            result = await apiCall('garantias.php', 'POST', payload);
+        }
+
         if (result && result.success) {
-            showModal('Éxito', 'Garantía guardada.');
+            showModal('Éxito', garantiaId ? 'Garantía actualizada.' : 'Garantía creada.');
             loadGarantiasModule();
         } else {
             showModal('Error', result?.error || 'Error al guardar.');
         }
-    } catch (error) { console.error(error); } 
-    finally { btn.disabled = false; }
+    } catch (error) {
+        console.error(error);
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 async function deleteGarantia(id) {
-    if (!confirm('¿Eliminar garantía?')) return;
-    alert('Pendiente de implementación en backend.');
+    if (!confirm('¿Está seguro de que desea eliminar esta garantía? Esta acción también eliminará los avalúos y seguros relacionados.')) return;
+
+    try {
+        const response = await apiCall(`garantias.php?id=${id}`, 'DELETE');
+        if (response && response.success) {
+            showModal('Éxito', 'Garantía eliminada correctamente.');
+            loadGarantiasModule();
+        } else {
+            showModal('Error', response?.error || 'No se pudo eliminar la garantía.');
+        }
+    } catch (error) {
+        console.error(error);
+        showModal('Error', 'Error al intentar eliminar la garantía.');
+    }
 }

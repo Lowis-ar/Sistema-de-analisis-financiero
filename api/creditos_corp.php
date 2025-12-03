@@ -46,7 +46,13 @@ function listarCartera($pdo) {
                        COALESCE(cj.razon_social, cl.nombre) as cliente_nombre,
                        COALESCE(cj.nit, cl.dui) as cliente_doc,
                        pc.nombre as tipo_credito,
-                       z.nombre as zona_nombre
+                       z.nombre as zona_nombre,
+                       -- NUEVO: Traemos el saldo exacto del plan (Saldo Proyectado + Capital de la cuota actual)
+                       (SELECT (pp.saldo_proyectado + pp.capital_programado) 
+                        FROM plan_pagos_corp pp 
+                        WHERE pp.credito_id = c.id AND pp.estado != 'pagado' 
+                        ORDER BY pp.numero_cuota ASC LIMIT 1
+                       ) as saldo_plan
                 FROM creditos_corporativos c
                 LEFT JOIN clientes cl ON c.cliente_id = cl.id
                 LEFT JOIN clientes_juridicos cj ON c.cliente_id = cj.cliente_id
