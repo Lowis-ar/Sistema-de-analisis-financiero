@@ -2,6 +2,7 @@
 
 let activosView = 'list';
 let currentModal = null;
+let currentTab = 'activos'; // 'activos' o 'bajas'
 
 // ==================== CONSTANTES DE CONFIGURACIÓN ====================
 const SUCURSALES = [
@@ -101,6 +102,16 @@ function formatCurrency(amount) {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     }).format(amount);
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('es-SV', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
 }
 
 function showLoading() {
@@ -209,6 +220,25 @@ function loadActivos() {
     }, 300);
 }
 
+// Función para cargar bajas
+async function loadBajas() {
+    showLoading();
+    
+    try {
+        const bajas = await apiCall('activos.php?action=bajas');
+        
+        if (bajas && !bajas.error) {
+            renderBajas(bajas);
+        } else {
+            showModal('Error', 'Error al cargar el historial de bajas');
+            loadActivos(); // Volver a la vista de activos
+        }
+    } catch (error) {
+        showModal('Error', 'Error de conexión con el servidor');
+        loadActivos(); // Volver a la vista de activos
+    }
+}
+
 function renderActivos(activos) {
     const content = `
         <div class="space-y-6">
@@ -224,19 +254,51 @@ function renderActivos(activos) {
                 </div>
             </div>
             
-            ${activosView === 'list' ? renderActivosList(activos) : renderNewActivoForm()}
+            <!-- Pestañas para alternar entre activos y bajas -->
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex space-x-4">
+                    <button onclick="switchTab('activos')" 
+                            class="${currentTab === 'activos' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} py-2 px-3 border-b-2 font-medium text-sm transition-colors duration-200">
+                        <i class="fas fa-building mr-2"></i> Activos Activos
+                        <span class="ml-1 bg-purple-100 text-purple-800 text-xs font-medium px-2 py-0.5 rounded-full">
+                            ${activos.filter(a => !a.estado || a.estado === 'activo').length}
+                        </span>
+                    </button>
+                    <button onclick="switchTab('bajas')" 
+                            class="${currentTab === 'bajas' ? 'border-red-500 text-red-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'} py-2 px-3 border-b-2 font-medium text-sm transition-colors duration-200">
+                        <i class="fas fa-trash-alt mr-2"></i> Historial de Bajas
+                    </button>
+                </nav>
+            </div>
+            
+            ${currentTab === 'activos' ? (
+                activosView === 'list' ? renderActivosList(activos) : renderNewActivoForm()
+            ) : renderBajasSection()}
         </div>
     `;
     
     document.getElementById('main-content').innerHTML = content;
+    
+    // Si estamos en la pestaña de bajas, cargarlas
+    if (currentTab === 'bajas') {
+        loadBajas();
+    }
+}
+
+function switchTab(tab) {
+    currentTab = tab;
+    activosView = 'list';
+    loadActivos();
 }
 
 function renderActivosList(activos) {
-    if (activos.length === 0) {
+    const activosActivos = activos.filter(a => !a.estado || a.estado === 'activo');
+    
+    if (activosActivos.length === 0) {
         return `
             <div class="card text-center py-12">
                 <i class="fas fa-building text-5xl text-gray-300 mb-4"></i>
-                <h3 class="text-xl font-semibold text-gray-600 mb-2">No hay activos registrados</h3>
+                <h3 class="text-xl font-semibold text-gray-600 mb-2">No hay activos activos</h3>
                 <p class="text-gray-500 mb-6">Comienza registrando tu primer activo fijo</p>
                 <button onclick="showNewActivoForm()" class="btn btn-primary">
                     <i class="fas fa-plus mr-2"></i> Registrar Activo
@@ -245,115 +307,372 @@ function renderActivosList(activos) {
         `;
     }
     
-    const activosHTML = activos.map(activo => {
-        // Calcular depreciación solo para activos activos
-        if (activo.estado === 'activo' || !activo.estado) {
-            const dep = calcularDepreciacionDiariaExacta(activo);
-            
-            // Encontrar nombres de sucursal y departamento
-            const sucursalInfo = SUCURSALES.find(s => s.codigo === activo.institucion) || 
-                               { nombre: activo.institucion_nombre || 'N/A' };
-            const deptoInfo = DEPARTAMENTOS.find(d => d.codigo === activo.unidad_codigo) || 
-                            { nombre: activo.unidad || 'N/A' };
-            
-            return `
-                <div class="card border-l-4 border-purple-500 hover:shadow-md transition-shadow">
-                    <div class="flex justify-between items-start">
-                        <div class="flex-1">
-                            <h3 class="font-bold text-lg text-gray-800">${activo.descripcion}</h3>
-                            <p class="text-sm text-gray-600 font-mono">${activo.codigo}</p>
-                            <p class="text-xs text-gray-500 mt-1">
-                                <i class="fas fa-calendar-alt mr-1"></i> Adquirido: ${new Date(activo.fecha_compra).toLocaleDateString()}
-                            </p>
-                            <div class="flex flex-wrap gap-1 mt-1">
-                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
-                                    <i class="fas fa-tag mr-1"></i> ${DEPRECIACION_LISR[activo.tipo_codigo]?.label || activo.tipo || 'Sin tipo'}
-                                </span>
-                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                                    <i class="fas fa-building mr-1"></i> ${deptoInfo.nombre}
-                                </span>
-                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
-                                    <i class="fas fa-map-marker-alt mr-1"></i> ${sucursalInfo.nombre}
-                                </span>
-                            </div>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <button onclick="mostrarFormularioBaja(${activo.id})" 
-                                    class="btn btn-sm btn-danger"
-                                    title="Dar de baja">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="mt-4 grid grid-cols-3 gap-3 text-center">
-                        <div class="bg-gray-50 p-3 rounded">
-                            <p class="text-xs text-gray-500 mb-1">Valor Original</p>
-                            <p class="font-bold text-gray-800">${formatCurrency(activo.valor)}</p>
-                        </div>
-                        <div class="bg-red-50 p-3 rounded">
-                            <p class="text-xs text-red-500 mb-1">Dep. Acumulada</p>
-                            <p class="font-bold text-red-600">${formatCurrency(dep.acumulada)}</p>
-                        </div>
-                        <div class="bg-green-50 p-3 rounded">
-                            <p class="text-xs text-green-500 mb-1">Valor en Libros</p>
-                            <p class="font-bold text-green-600">${formatCurrency(dep.valorLibros)}</p>
-                        </div>
-                    </div>
-                    
-                    <div class="mt-4 flex justify-between items-center text-xs text-gray-500">
-                        <div>
-                            <span class="inline-block mr-3">
-                                <i class="fas fa-calendar-day mr-1"></i> Dep. diaria: ${formatCurrency(dep.diaria)}
-                            </span>
-                            <span class="inline-block">
-                                <i class="fas fa-clock mr-1"></i> ${dep.diasTranscurridos} días transcurridos
-                            </span>
-                        </div>
-                        <span class="text-purple-600 font-medium">
-                            ${((activo.porcentaje_depreciacion || DEPRECIACION_LISR[activo.tipo_codigo]?.porcentaje || 0) * 100).toFixed(1)}% anual
-                        </span>
-                    </div>
-                </div>
-            `;
-        } else {
-            // Para activos dados de baja
-            return `
-                <div class="card border-l-4 border-red-500 bg-gray-50">
-                    <div class="flex justify-between items-start">
-                        <div class="flex-1">
-                            <h3 class="font-bold text-lg text-gray-600 line-through">${activo.descripcion}</h3>
-                            <p class="text-sm text-gray-500 font-mono">${activo.codigo}</p>
-                            <div class="mt-2">
-                                <p class="text-xs text-gray-500">
-                                    <i class="fas fa-calendar-alt mr-1"></i> Adquirido: ${new Date(activo.fecha_compra).toLocaleDateString()}
-                                </p>
-                                <p class="text-xs text-red-500 mt-1">
-                                    <i class="fas fa-ban mr-1"></i> BAJA: ${activo.motivo_baja || 'Sin motivo'} 
-                                    • ${activo.fecha_baja ? new Date(activo.fecha_baja).toLocaleDateString() : 'Sin fecha'}
-                                </p>
-                            </div>
-                        </div>
-                        <span class="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
-                            <i class="fas fa-times-circle mr-1"></i> BAJA
-                        </span>
-                    </div>
-                    
-                    <div class="mt-3 p-2 bg-red-50 rounded">
-                        <p class="text-xs text-red-600">
-                            <i class="fas fa-info-circle mr-1"></i> Este activo ha sido dado de baja
+    const activosHTML = activosActivos.map(activo => {
+        const dep = calcularDepreciacionDiariaExacta(activo);
+        
+        const sucursalInfo = SUCURSALES.find(s => s.codigo === activo.institucion) || 
+                           { nombre: activo.institucion_nombre || 'N/A' };
+        const deptoInfo = DEPARTAMENTOS.find(d => d.codigo === activo.unidad_codigo) || 
+                        { nombre: activo.unidad || 'N/A' };
+        
+        return `
+            <div class="card border-l-4 border-purple-500 hover:shadow-md transition-shadow">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <h3 class="font-bold text-lg text-gray-800">${activo.descripcion}</h3>
+                        <p class="text-sm text-gray-600 font-mono">${activo.codigo}</p>
+                        <p class="text-xs text-gray-500 mt-1">
+                            <i class="fas fa-calendar-alt mr-1"></i> Adquirido: ${formatDate(activo.fecha_compra)}
                         </p>
+                        <div class="flex flex-wrap gap-1 mt-1">
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                                <i class="fas fa-tag mr-1"></i> ${DEPRECIACION_LISR[activo.tipo_codigo]?.label || activo.tipo || 'Sin tipo'}
+                            </span>
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                                <i class="fas fa-building mr-1"></i> ${deptoInfo.nombre}
+                            </span>
+                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                                <i class="fas fa-map-marker-alt mr-1"></i> ${sucursalInfo.nombre}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button onclick="mostrarFormularioBaja(${activo.id})" 
+                                class="btn btn-sm btn-danger"
+                                title="Dar de baja">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </div>
                 </div>
-            `;
-        }
+                
+                <div class="mt-4 grid grid-cols-3 gap-3 text-center">
+                    <div class="bg-gray-50 p-3 rounded">
+                        <p class="text-xs text-gray-500 mb-1">Valor Original</p>
+                        <p class="font-bold text-gray-800">${formatCurrency(activo.valor)}</p>
+                    </div>
+                    <div class="bg-red-50 p-3 rounded">
+                        <p class="text-xs text-red-500 mb-1">Dep. Acumulada</p>
+                        <p class="font-bold text-red-600">${formatCurrency(dep.acumulada)}</p>
+                    </div>
+                    <div class="bg-green-50 p-3 rounded">
+                        <p class="text-xs text-green-500 mb-1">Valor en Libros</p>
+                        <p class="font-bold text-green-600">${formatCurrency(dep.valorLibros)}</p>
+                    </div>
+                </div>
+                
+                <div class="mt-4 flex justify-between items-center text-xs text-gray-500">
+                    <div>
+                        <span class="inline-block mr-3">
+                            <i class="fas fa-calendar-day mr-1"></i> Dep. diaria: ${formatCurrency(dep.diaria)}
+                        </span>
+                        <span class="inline-block">
+                            <i class="fas fa-clock mr-1"></i> ${dep.diasTranscurridos} días transcurridos
+                        </span>
+                    </div>
+                    <span class="text-purple-600 font-medium">
+                        ${((activo.porcentaje_depreciacion || DEPRECIACION_LISR[activo.tipo_codigo]?.porcentaje || 0) * 100).toFixed(1)}% anual
+                    </span>
+                </div>
+            </div>
+        `;
     }).join('');
     
     return `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">${activosHTML}</div>`;
 }
 
+function renderBajasSection() {
+    return `
+        <div class="text-center py-8">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+            <p class="text-gray-600">Cargando historial de bajas...</p>
+        </div>
+    `;
+}
+
+function renderBajas(bajas) {
+    if (bajas.length === 0) {
+        document.getElementById('main-content').innerHTML = `
+            <div class="space-y-6">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-2xl font-bold text-gray-800">Gestión de Activos Fijos</h2>
+                    <div class="flex space-x-2">
+                        <button onclick="mostrarReporteDepreciacion()" class="btn btn-secondary">
+                            <i class="fas fa-calculator mr-2"></i> Depreciación
+                        </button>
+                        <button onclick="showNewActivoForm()" class="btn btn-primary">
+                            <i class="fas fa-plus mr-2"></i> Nuevo Activo
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="border-b border-gray-200">
+                    <nav class="-mb-px flex space-x-4">
+                        <button onclick="switchTab('activos')" 
+                                class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-2 px-3 border-b-2 font-medium text-sm transition-colors duration-200">
+                            <i class="fas fa-building mr-2"></i> Activos Activos
+                        </button>
+                        <button onclick="switchTab('bajas')" 
+                                class="border-red-500 text-red-600 py-2 px-3 border-b-2 font-medium text-sm transition-colors duration-200">
+                            <i class="fas fa-trash-alt mr-2"></i> Historial de Bajas
+                        </button>
+                    </nav>
+                </div>
+                
+                <div class="card text-center py-12">
+                    <i class="fas fa-trash-alt text-5xl text-gray-300 mb-4"></i>
+                    <h3 class="text-xl font-semibold text-gray-600 mb-2">No hay bajas registradas</h3>
+                    <p class="text-gray-500 mb-6">No se han dado de baja activos todavía</p>
+                    <button onclick="switchTab('activos')" class="btn btn-primary">
+                        <i class="fas fa-arrow-left mr-2"></i> Ver Activos Activos
+                    </button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    const bajasHTML = bajas.map(baja => {
+        // Determinar icono y color según motivo
+        let motivoInfo = {
+            icon: 'fa-question-circle',
+            color: 'text-gray-500',
+            bgColor: 'bg-gray-100',
+            label: 'Desconocido'
+        };
+        
+        switch(baja.motivo) {
+            case 'vendido':
+                motivoInfo = {
+                    icon: 'fa-dollar-sign',
+                    color: 'text-green-600',
+                    bgColor: 'bg-green-50',
+                    label: 'Vendido'
+                };
+                break;
+            case 'donado':
+                motivoInfo = {
+                    icon: 'fa-hands-helping',
+                    color: 'text-blue-600',
+                    bgColor: 'bg-blue-50',
+                    label: 'Donado'
+                };
+                break;
+            case 'inhabilitado':
+                motivoInfo = {
+                    icon: 'fa-ban',
+                    color: 'text-red-600',
+                    bgColor: 'bg-red-50',
+                    label: 'Inhabilitado'
+                };
+                break;
+        }
+        
+        return `
+            <div class="card border-l-4 ${motivoInfo.color.replace('text-', 'border-')}">
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <div class="flex items-start">
+                            <div class="${motivoInfo.bgColor} ${motivoInfo.color} p-2 rounded-lg mr-3">
+                                <i class="fas ${motivoInfo.icon} text-lg"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-lg text-gray-800">${baja.descripcion}</h3>
+                                <p class="text-sm text-gray-600 font-mono">${baja.codigo}</p>
+                                <div class="flex flex-wrap gap-2 mt-2">
+                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs ${motivoInfo.bgColor} ${motivoInfo.color}">
+                                        <i class="fas ${motivoInfo.icon} mr-1"></i> ${motivoInfo.label}
+                                    </span>
+                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
+                                        <i class="fas fa-building mr-1"></i> ${baja.unidad || 'N/A'}
+                                    </span>
+                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
+                                        <i class="fas fa-map-marker-alt mr-1"></i> ${baja.institucion || 'N/A'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <div class="bg-gray-50 p-3 rounded">
+                                <p class="text-xs text-gray-500 mb-1">Valor Original</p>
+                                <p class="font-bold text-gray-800">${formatCurrency(baja.valor_original)}</p>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded">
+                                <p class="text-xs text-gray-500 mb-1">Fecha Compra</p>
+                                <p class="font-bold text-gray-800">${formatDate(baja.fecha_compra)}</p>
+                            </div>
+                            <div class="bg-gray-50 p-3 rounded">
+                                <p class="text-xs text-gray-500 mb-1">Fecha Baja</p>
+                                <p class="font-bold text-gray-800">${formatDate(baja.fecha_baja)}</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Información específica según motivo -->
+                        <div class="mt-4 p-3 ${motivoInfo.bgColor} rounded-lg">
+                            <p class="text-sm font-medium ${motivoInfo.color} mb-1">
+                                <i class="fas ${motivoInfo.icon} mr-1"></i> Detalles de la Baja
+                            </p>
+                            ${baja.motivo === 'vendido' ? `
+                                <div class="space-y-2">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-sm text-gray-600">Valor de venta:</span>
+                                        <span class="font-bold text-green-600">${formatCurrency(baja.valor_venta)}</span>
+                                    </div>
+                                    ${baja.receptor ? `
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-sm text-gray-600">Comprador:</span>
+                                            <span class="font-medium text-gray-800">${baja.receptor}</span>
+                                        </div>
+                                    ` : ''}
+                                    ${baja.observaciones ? `
+                                        <div class="mt-2">
+                                            <span class="text-sm text-gray-600 block mb-1">Observaciones:</span>
+                                            <p class="text-sm text-gray-700 bg-white p-2 rounded">${baja.observaciones}</p>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            ` : ''}
+                            
+                            ${baja.motivo === 'donado' ? `
+                                <div class="space-y-2">
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-sm text-gray-600">Institución receptora:</span>
+                                        <span class="font-medium text-blue-600">${baja.receptor || 'No especificado'}</span>
+                                    </div>
+                                    ${baja.valor_venta ? `
+                                        <div class="flex justify-between items-center">
+                                            <span class="text-sm text-gray-600">Valor donado:</span>
+                                            <span class="font-bold text-blue-600">${formatCurrency(baja.valor_venta)}</span>
+                                        </div>
+                                    ` : ''}
+                                    ${baja.observaciones ? `
+                                        <div class="mt-2">
+                                            <span class="text-sm text-gray-600 block mb-1">Observaciones:</span>
+                                            <p class="text-sm text-gray-700 bg-white p-2 rounded">${baja.observaciones}</p>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            ` : ''}
+                            
+                            ${baja.motivo === 'inhabilitado' ? `
+                                <div class="space-y-2">
+                                    <div class="text-sm text-gray-700">
+                                        <i class="fas fa-exclamation-triangle mr-1 text-red-500"></i>
+                                        ${baja.observaciones || 'Activo inhabilitado por obsolescencia o daño irreparable'}
+                                    </div>
+                                    ${baja.receptor ? `
+                                        <div class="flex justify-between items-center mt-2">
+                                            <span class="text-sm text-gray-600">Responsable de baja:</span>
+                                            <span class="font-medium text-gray-800">${baja.receptor}</span>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <!-- Resumen de la transacción -->
+                        <div class="mt-3 flex justify-between items-center text-xs text-gray-500">
+                            <div>
+                                <span class="inline-block mr-3">
+                                    <i class="fas fa-calendar-alt mr-1"></i> Registrado: ${formatDate(baja.fecha_registro)}
+                                </span>
+                            </div>
+                            <span class="text-gray-600 font-medium">
+                                ID: ${baja.id}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    const content = `
+        <div class="space-y-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-gray-800">Gestión de Activos Fijos</h2>
+                <div class="flex space-x-2">
+                    <button onclick="mostrarReporteDepreciacion()" class="btn btn-secondary">
+                        <i class="fas fa-calculator mr-2"></i> Depreciación
+                    </button>
+                    <button onclick="showNewActivoForm()" class="btn btn-primary">
+                        <i class="fas fa-plus mr-2"></i> Nuevo Activo
+                    </button>
+                </div>
+            </div>
+            
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex space-x-4">
+                    <button onclick="switchTab('activos')" 
+                            class="border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-2 px-3 border-b-2 font-medium text-sm transition-colors duration-200">
+                        <i class="fas fa-building mr-2"></i> Activos Activos
+                    </button>
+                    <button onclick="switchTab('bajas')" 
+                            class="border-red-500 text-red-600 py-2 px-3 border-b-2 font-medium text-sm transition-colors duration-200">
+                        <i class="fas fa-trash-alt mr-2"></i> Historial de Bajas
+                        <span class="ml-1 bg-red-100 text-red-800 text-xs font-medium px-2 py-0.5 rounded-full">
+                            ${bajas.length}
+                        </span>
+                    </button>
+                </nav>
+            </div>
+            
+            <!-- Resumen estadístico -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div class="card bg-gray-50">
+                    <p class="text-sm text-gray-600">Total Bajas</p>
+                    <p class="text-2xl font-bold text-gray-800">${bajas.length}</p>
+                </div>
+                <div class="card bg-green-50">
+                    <p class="text-sm text-green-600">Vendidos</p>
+                    <p class="text-2xl font-bold text-green-700">${bajas.filter(b => b.motivo === 'vendido').length}</p>
+                </div>
+                <div class="card bg-blue-50">
+                    <p class="text-sm text-blue-600">Donados</p>
+                    <p class="text-2xl font-bold text-blue-700">${bajas.filter(b => b.motivo === 'donado').length}</p>
+                </div>
+                <div class="card bg-red-50">
+                    <p class="text-sm text-red-600">Inhabilitados</p>
+                    <p class="text-2xl font-bold text-red-700">${bajas.filter(b => b.motivo === 'inhabilitado').length}</p>
+                </div>
+            </div>
+            
+            <!-- Filtros -->
+            <div class="card">
+                <div class="flex flex-col md:flex-row justify-between items-center gap-3">
+                    <div>
+                        <h3 class="font-bold text-gray-800">Historial de Bajas de Activos</h3>
+                        <p class="text-sm text-gray-500">${bajas.length} registros encontrados</p>
+                    </div>
+                   
+                </div>
+            </div>
+            
+            <!-- Lista de bajas -->
+            <div class="grid grid-cols-1 gap-4">
+                ${bajasHTML}
+            </div>
+            
+            <!-- Información adicional -->
+            <div class="bg-gray-50 p-4 rounded-lg border text-sm text-gray-600">
+                <h4 class="font-bold text-gray-700 mb-2"><i class="fas fa-info-circle mr-1"></i> Información sobre las bajas</h4>
+                <ul class="space-y-1">
+                    <li>• <span class="font-medium">Vendidos:</span> Activos que fueron vendidos a terceros</li>
+                    <li>• <span class="font-medium">Donados:</span> Activos transferidos sin contraprestación</li>
+                    <li>• <span class="font-medium">Inhabilitados:</span> Activos que ya no son útiles por obsolescencia o daño</li>
+                    <li>• Los activos dados de baja ya no se deprecian ni forman parte del inventario</li>
+                </ul>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('main-content').innerHTML = content;
+}
+
+
 function showNewActivoForm() {
     activosView = 'form';
+    currentTab = 'activos';
     loadActivos();
 }
 
@@ -713,10 +1032,18 @@ async function procesarBaja(event, activoId) {
                     <i class="fas fa-check-circle text-5xl text-green-500 mb-4"></i>
                     <h4 class="text-xl font-bold text-gray-800 mb-2">¡Baja Exitosa!</h4>
                     <p class="text-gray-600">${response.message}</p>
+                    <div class="mt-4 text-sm text-gray-500">
+                        <p>El activo ahora aparece en el historial de bajas</p>
+                    </div>
                 </div>
             `);
             closeModal();
-            loadActivos(); // Recargar lista
+            // Recargar la vista actual
+            if (currentTab === 'bajas') {
+                loadBajas();
+            } else {
+                loadActivos();
+            }
         } else {
             showModal('Error', response.error || 'Error al procesar baja');
             btnSubmit.innerHTML = originalText;
@@ -800,7 +1127,6 @@ function mostrarReporteDepreciacion() {
                     <div class="flex justify-between items-center">
                         <h2 class="text-2xl font-bold text-gray-800">Reporte de Depreciación Diaria</h2>
                         <div class="flex space-x-2">
-                         
                             <button onclick="loadActivos()" class="btn btn-primary">
                                 <i class="fas fa-arrow-left mr-2"></i> Volver
                             </button>
@@ -893,11 +1219,14 @@ function mostrarReporteDepreciacion() {
 
 // ==================== FUNCIONES GLOBALES ====================
 function loadActivosModule() {
+    currentTab = 'activos';
     loadActivos();
 }
 
 // Hacer funciones disponibles globalmente
 window.loadActivos = loadActivos;
+window.loadBajas = loadBajas;
+window.switchTab = switchTab;
 window.showNewActivoForm = showNewActivoForm;
 window.cancelNewActivo = cancelNewActivo;
 window.saveActivo = saveActivo;
@@ -909,5 +1238,8 @@ window.actualizarInfoDepreciacion = actualizarInfoDepreciacion;
 window.showModal = showModal;
 window.closeModal = closeModal;
 window.formatCurrency = formatCurrency;
+window.formatDate = formatDate;
 window.showLoading = showLoading;
 window.calcularDepreciacionDiariaExacta = calcularDepreciacionDiariaExacta;
+window.exportarBajasPDF = exportarBajasPDF;
+window.exportarBajasExcel = exportarBajasExcel;
