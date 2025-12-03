@@ -65,7 +65,8 @@ function updateActiveTabButtons() {
         'clientes': ['Clientes'],
         'creditos': ['Créditos', 'Credit'], // Puede coincidir con cualquiera
         'activos': ['Activos'],
-        'garantias': ['Garantías', 'Garantias']
+        'garantias': ['Garantías', 'Garantias'],
+        'financiero': ['Financiera', 'Info. Financiera']
     };
 
     const keywords = tabKeywords[appState.activeTab] || [];
@@ -114,6 +115,9 @@ function renderCurrentTab() {
             if(typeof loadActivosModule === 'function') loadActivosModule();
             else console.error('Falta activos.js');
             break;
+            case 'financiero':
+        if(typeof loadFinancieroModule === 'function') loadFinancieroModule();
+        break;
         default:
             loadDashboard();
     }

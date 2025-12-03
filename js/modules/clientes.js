@@ -2,7 +2,7 @@ let clientesView = 'list';
 let clientesCount = 0;
 let editingClienteId = null;
 
-// Expresiones Regulares para validaciones locales
+// Expresiones Regulares
 const CLIENTE_VALIDATORS = {
     dui: (val) => /^\d{8}-\d{1}$/.test(val),
     nit: (val) => /^\d{4}-\d{6}-\d{3}-\d{1}$/.test(val),
@@ -10,10 +10,17 @@ const CLIENTE_VALIDATORS = {
     nrc: (val) => /^\d{2,8}$/.test(val)
 };
 
-// Función para cargar el contador de clientes
+// --- CARGA DE DATOS ---
+
+async function loadClientesModule() {
+    if (typeof loadClientes === 'function') {
+        loadClientes();
+    }
+}
+
 async function loadClientesCount() {
     try {
-        const clientes = await apiCall('clientes.php');
+        const clientes = await apiCall('clientes.php'); // Asegura ruta correcta
         if (clientes && !clientes.error) {
             clientesCount = clientes.length;
             return clientesCount;
@@ -24,36 +31,35 @@ async function loadClientesCount() {
     return 0;
 }
 
-// Función para generar código de cliente automático
 function generarCodigoCliente() {
     const nuevoNumero = clientesCount + 1;
-    // Prefijo CLI para Naturales, EMP para Jurídicos (opcional, aquí usamos CLI genérico)
     return `CLI${String(nuevoNumero).padStart(3, '0')}`;
 }
 
 async function loadClientes() {
     showLoading();
-
-    // Cargar contador primero
     await loadClientesCount();
 
     setTimeout(async () => {
+        // Intentamos cargar clientes.php (general) o ajusta si tienes endpoints separados
         const clientes = await apiCall('clientes.php');
 
-        if (clientes && !clientes.error) {
+        if (Array.isArray(clientes)) {
             renderClientes(clientes);
         } else {
             document.getElementById('main-content').innerHTML = `
                 <div class="card">
                     <h2 class="text-2xl font-bold text-gray-800 mb-6">Clientes</h2>
                     <div class="text-center py-8 text-red-500">
-                        <p>Error al cargar clientes: ${clientes?.error || 'Error desconocido'}</p>
+                        <p>Error o sin datos: ${clientes?.error || 'No hay conexión con la BD'}</p>
                     </div>
                 </div>
             `;
         }
     }, 300);
 }
+
+// --- RENDERIZADO DE LISTA ---
 
 function renderClientes(clientes) {
     const content = `
@@ -64,11 +70,9 @@ function renderClientes(clientes) {
                     <i class="fas fa-plus mr-2"></i> Nuevo Cliente
                 </button>
             </div>
-            
             ${clientesView === 'list' ? renderClientesList(clientes) : ''}
         </div>
     `;
-
     document.getElementById('main-content').innerHTML = content;
 }
 
@@ -78,7 +82,6 @@ function renderClientesList(clientes) {
             <div class="card text-center py-12">
                 <i class="fas fa-users text-5xl text-gray-300 mb-4"></i>
                 <h3 class="text-xl font-semibold text-gray-600 mb-2">No hay clientes registrados</h3>
-                <p class="text-gray-500 mb-6">Comienza agregando tu primer cliente</p>
                 <button onclick="showNewClienteForm()" class="btn btn-primary">
                     <i class="fas fa-plus mr-2"></i> Agregar Cliente
                 </button>
@@ -86,16 +89,15 @@ function renderClientesList(clientes) {
         `;
     }
 
-    // Mostrar contador en el encabezado
     const headerHTML = `
-        <div class="mb-4 p-3 bg-blue-50 rounded-lg">
+        <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100">
             <div class="flex justify-between items-center">
                 <div>
-                    <p class="text-sm text-blue-800">Total de clientes registrados</p>
+                    <p class="text-sm text-blue-800">Clientes registrados</p>
                     <p class="text-2xl font-bold text-blue-900">${clientesCount}</p>
                 </div>
                 <div class="text-right">
-                    <p class="text-sm text-blue-800">Próximo código disponible</p>
+                    <p class="text-sm text-blue-800">Siguiente Código</p>
                     <p class="text-lg font-bold text-blue-900">${generarCodigoCliente()}</p>
                 </div>
             </div>
@@ -104,46 +106,42 @@ function renderClientesList(clientes) {
 
     const clientesHTML = clientes.map(cliente => {
         const isJuridico = cliente.tipo === 'juridico' || cliente.tipo === 'JURIDICO';
-        // Mapear campos visuales
         const nombreDisplay = cliente.nombre || cliente.razon_social;
         const docDisplay = cliente.dui || cliente.nit;
-        const tipoLabel = isJuridico ? 'Persona Jurídica' : 'Persona Natural';
         const icon = isJuridico ? 'fa-building' : 'fa-user';
+        const colorBorder = isJuridico ? 'border-purple-500' : 'border-blue-500';
 
         return `
-        <div class="card border-l-4 ${isJuridico ? 'border-purple-500' : 'border-blue-500'} hover:shadow-lg transition-shadow cursor-pointer" 
+        <div class="card border-l-4 ${colorBorder} hover:shadow-lg transition-shadow cursor-pointer" 
              onclick="showEditClienteForm(${cliente.id})">
             <div class="flex justify-between items-start">
                 <div>
                     <div class="flex items-center gap-2">
                         <i class="fas ${icon} text-gray-400"></i>
-                        <h3 class="font-bold text-lg">${nombreDisplay}</h3>
+                        <h3 class="font-bold text-lg text-gray-800">${nombreDisplay}</h3>
                     </div>
-                    <p class="text-sm text-gray-500">${cliente.codigo} • ${tipoLabel}</p>
+                    <p class="text-xs text-gray-500 font-mono mt-1">${cliente.codigo}</p>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <span class="px-3 py-1 rounded-full text-sm font-bold ${cliente.calificacion === 'A' ? 'bg-green-100 text-green-800' :
-                        cliente.calificacion === 'B' ? 'bg-yellow-100 text-yellow-800' : 
-                        cliente.calificacion === 'C' ? 'bg-orange-100 text-orange-800' : 'bg-red-100 text-red-800'}">
-                        ${cliente.calificacion || 'A'}
-                    </span>
-                    <button onclick="event.stopPropagation(); deleteCliente(${cliente.id}, '${nombreDisplay}')" 
-                            class="text-red-500 hover:text-red-700 p-1">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
+                <button onclick="event.stopPropagation(); deleteCliente(${cliente.id}, '${nombreDisplay}')" 
+                        class="text-red-400 hover:text-red-600 p-1">
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
-            <div class="mt-4 grid grid-cols-2 gap-2 text-sm">
-                <div><span class="font-medium">${isJuridico ? 'NIT:' : 'DUI:'}</span> ${docDisplay || 'N/A'}</div>
-                <div><span class="font-medium">Teléfono:</span> ${cliente.telefono || 'N/A'}</div>
-                ${isJuridico ? `<div><span class="font-medium">NRC:</span> ${cliente.nrc || 'N/A'}</div>` : ''}
-                <div><span class="font-medium">Ingresos:</span> ${formatCurrency(cliente.ingresos)}</div>
-                <div class="col-span-2 mt-2 pt-2 border-t">
-                    <span class="font-medium">Capacidad de pago:</span>
-                    <span class="font-bold ${cliente.capacidad_pago >= 0 ? 'text-green-600' : 'text-red-600'}">
-                        ${formatCurrency(cliente.capacidad_pago)}
-                    </span>
+            
+            <div class="mt-4 grid grid-cols-2 gap-y-2 gap-x-4 text-sm text-gray-600">
+                <div>
+                    <span class="block text-xs text-gray-400">${isJuridico ? 'NIT' : 'DUI'}</span>
+                    ${docDisplay || '-'}
                 </div>
+                <div>
+                    <span class="block text-xs text-gray-400">Teléfono</span>
+                    ${cliente.telefono || '-'}
+                </div>
+                ${isJuridico ? `
+                <div class="col-span-2 border-t pt-2 mt-1">
+                    <span class="block text-xs text-gray-400">Representante</span>
+                    ${cliente.representante_legal || '-'}
+                </div>` : ''}
             </div>
         </div>
     `}).join('');
@@ -155,6 +153,8 @@ function renderClientesList(clientes) {
         </div>
     `;
 }
+
+// --- FORMULARIOS ---
 
 async function showNewClienteForm() {
     showLoading();
@@ -175,7 +175,6 @@ async function showNewClienteForm() {
             </div>
         `;
         document.getElementById('main-content').innerHTML = content;
-        // Inicializar estado del formulario
         toggleClienteFields(); 
     }, 100);
 }
@@ -183,9 +182,13 @@ async function showNewClienteForm() {
 async function showEditClienteForm(clienteId) {
     showLoading();
     try {
+        // Asegúrate de que tu backend soporte ?id=X
         const cliente = await apiCall(`clientes.php?id=${clienteId}`);
         
-        if (cliente && !cliente.error) {
+        // Si el backend devuelve un array con 1 objeto, lo sacamos
+        const data = Array.isArray(cliente) ? cliente[0] : cliente;
+
+        if (data && !data.error) {
             editingClienteId = clienteId;
             clientesView = 'form';
             
@@ -198,35 +201,40 @@ async function showEditClienteForm(clienteId) {
                                 <i class="fas fa-times mr-2"></i> Cancelar
                             </button>
                         </div>
-                        ${renderFormulario(cliente)}
+                        ${renderFormulario(data)}
                     </div>
                 `;
                 document.getElementById('main-content').innerHTML = content;
-                // Inicializar estado del formulario con datos cargados
                 toggleClienteFields();
-                // Actualizar cálculos
                 updateClienteFormCalculos();
             }, 100);
         } else {
-            showModal('Error', 'No se pudo cargar el cliente para editar');
+            showModal('Error', 'No se pudo cargar el cliente.');
             loadClientes();
         }
     } catch (error) {
-        console.error('Error al cargar cliente:', error);
-        showModal('Error', 'Error al cargar los datos del cliente');
+        console.error(error);
         loadClientes();
     }
 }
 
-// Función unificada para renderizar el formulario (Nuevo y Edición)
 function renderFormulario(cliente = null) {
     const codigo = cliente ? cliente.codigo : generarCodigoCliente();
-    const tipo = cliente ? (cliente.tipo === 'JURIDICO' ? 'juridica' : cliente.tipo) : 'natural';
+    // Detectar tipo. Si viene de BD suele ser mayúscula 'JURIDICO', normalizamos a 'juridica' para el radio button
+    const tipoDB = cliente ? (cliente.tipo || '').toLowerCase() : 'natural';
+    const tipo = (tipoDB === 'juridico' || tipoDB === 'juridica') ? 'juridica' : 'natural';
     
-    // Mapeo de valores
+    // Valores
     const nombreVal = cliente ? (cliente.nombre || cliente.razon_social || '') : '';
     const docVal = cliente ? (cliente.dui || cliente.nit || '') : '';
     
+    // Campos Jurídicos Específicos
+    const nrcVal = cliente?.nrc || '';
+    const giroVal = cliente?.giro_economico || '';
+    const repVal = cliente?.representante_legal || '';
+    const duiRepVal = cliente?.dui_representante || '';
+    const fechaConstVal = cliente?.fecha_constitucion || '';
+
     return `
         <div class="card">
             <form id="formCliente" onsubmit="saveCliente(event)">
@@ -262,18 +270,13 @@ function renderFormulario(cliente = null) {
                     <div class="input-group md:col-span-2">
                         <label id="lbl-nombre">Nombre Completo *</label>
                         <input type="text" id="nombre" class="w-full p-2 border rounded" required
-                               value="${nombreVal}"
-                               oninput="validateNombreInput(this)"
-                               placeholder="Ej: Juan Pérez">
-                        <div class="text-xs mt-1 text-gray-500" id="nombre-hint"></div>
+                               value="${nombreVal}" oninput="validateNombreInput(this)">
                     </div>
 
                     <div class="input-group">
                         <label id="lbl-documento">DUI *</label>
                         <input type="text" id="documento" class="w-full p-2 border rounded" 
-                               value="${docVal}"
-                               oninput="formatDocumentoInput(this)"
-                               placeholder="00000000-0">
+                               value="${docVal}" oninput="formatDocumentoInput(this)">
                         <div class="text-xs mt-1 text-gray-500" id="documento-hint">Formato: 00000000-0</div>
                     </div>
 
@@ -286,27 +289,40 @@ function renderFormulario(cliente = null) {
                     <div class="juridico-field hidden input-group">
                         <label>NRC (Registro IVA) *</label>
                         <input type="text" id="nrc" class="w-full p-2 border rounded"
-                               value="${cliente?.nrc || ''}" placeholder="Ej: 123456-7">
+                               value="${nrcVal}" placeholder="Ej: 123456-7">
                     </div>
 
                     <div class="juridico-field hidden input-group">
                         <label>Giro Económico</label>
                         <input type="text" id="giro" class="w-full p-2 border rounded"
-                               value="${cliente?.giro_economico || ''}">
+                               value="${giroVal}">
                     </div>
 
-                    <div class="juridico-field hidden input-group md:col-span-2">
-                        <label>Representante Legal</label>
-                        <input type="text" id="representante" class="w-full p-2 border rounded"
-                               value="${cliente?.representante_legal || ''}">
+                    <div class="juridico-field hidden input-group">
+                        <label>Fecha de Constitución</label>
+                        <input type="date" id="fecha_constitucion" class="w-full p-2 border rounded"
+                               value="${fechaConstVal}">
                     </div>
 
+                    <div class="juridico-field hidden md:col-span-2 bg-slate-50 p-3 rounded border border-slate-200 mt-2">
+                        <p class="font-bold text-sm text-slate-600 mb-2 border-b pb-1">Datos del Representante Legal</p>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="input-group">
+                                <label>Nombre Representante *</label>
+                                <input type="text" id="representante" class="w-full p-2 border rounded bg-white"
+                                       value="${repVal}">
+                            </div>
+                            <div class="input-group">
+                                <label>DUI Representante *</label>
+                                <input type="text" id="dui_representante" class="w-full p-2 border rounded bg-white"
+                                       value="${duiRepVal}" oninput="formatRepDui(this)" placeholder="00000000-0">
+                            </div>
+                        </div>
+                    </div>
                     <div class="input-group">
                         <label>Teléfono *</label>
                         <input type="text" id="telefono" class="w-full p-2 border rounded" 
-                               value="${cliente?.telefono || ''}"
-                               oninput="formatTelefonoInput(this)"
-                               placeholder="2222-2222">
+                               value="${cliente?.telefono || ''}" oninput="formatTelefonoInput(this)" placeholder="2222-2222">
                     </div>
 
                     <div class="input-group md:col-span-2">
@@ -315,7 +331,7 @@ function renderFormulario(cliente = null) {
                     </div>
 
                     <div class="md:col-span-2 bg-blue-50 p-4 rounded border border-blue-200 mt-2">
-                        <h4 class="font-bold text-blue-800 mb-3">Análisis Financiero</h4>
+                        <h4 class="font-bold text-blue-800 mb-3">Perfil Económico Rápido</h4>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div class="input-group">
                                 <label>Ingresos Mensuales ($)</label>
@@ -348,49 +364,56 @@ function renderFormulario(cliente = null) {
     `;
 }
 
-// Lógica de interfaz: Mostrar/Ocultar campos
+// --- LÓGICA DE UI Y VALIDACIÓN ---
+
 function toggleClienteFields() {
     const isJuridico = document.querySelector('input[name="tipo_cliente"][value="juridica"]').checked;
     
-    // Elementos
+    // Labels principales
     const lblNombre = document.getElementById('lbl-nombre');
     const lblDoc = document.getElementById('lbl-documento');
     const inputDoc = document.getElementById('documento');
-    const fieldsJuridico = document.querySelectorAll('.juridico-field');
     const inputNombre = document.getElementById('nombre');
+    
+    // Campos a mostrar/ocultar
+    const fieldsJuridico = document.querySelectorAll('.juridico-field');
 
     if (isJuridico) {
-        // Modo Jurídico
         lblNombre.textContent = 'Razón Social *';
         inputNombre.placeholder = 'Ej: Industrias S.A. de C.V.';
-        
-        lblDoc.textContent = 'NIT *';
+        lblDoc.textContent = 'NIT Empresa *';
         inputDoc.placeholder = '0614-161090-103-6';
-        document.getElementById('documento-hint').textContent = 'Formato: 0000-000000-000-0 (14 dígitos)';
+        document.getElementById('documento-hint').textContent = 'Formato: 0000-000000-000-0';
         
-        // Mostrar campos extra
         fieldsJuridico.forEach(el => el.classList.remove('hidden'));
     } else {
-        // Modo Natural
         lblNombre.textContent = 'Nombre Completo *';
         inputNombre.placeholder = 'Ej: Juan Pérez';
-        
         lblDoc.textContent = 'DUI *';
         inputDoc.placeholder = '00000000-0';
-        document.getElementById('documento-hint').textContent = 'Formato: 00000000-0 (9 dígitos)';
+        document.getElementById('documento-hint').textContent = 'Formato: 00000000-0';
         
-        // Ocultar campos extra
         fieldsJuridico.forEach(el => el.classList.add('hidden'));
     }
 }
 
-// Validaciones y Formatos
+// Formateador especial para DUI de Representante (Siempre DUI, aunque sea empresa)
+function formatRepDui(input) {
+    let value = input.value.replace(/\D/g, '').slice(0, 9);
+    if (value.length > 8) {
+        value = value.substring(0, 8) + '-' + value.substring(8, 9);
+    }
+    input.value = value;
+    // Validar visualmente
+    validateField(input, CLIENTE_VALIDATORS.dui(value));
+}
+
 function formatDocumentoInput(input) {
     const isJuridico = document.querySelector('input[name="tipo_cliente"][value="juridica"]').checked;
-    let value = input.value.replace(/\D/g, ''); // Solo números
+    let value = input.value.replace(/\D/g, '');
 
     if (isJuridico) {
-        // Formato NIT: 0000-000000-000-0 (14 digitos)
+        // NIT (14)
         value = value.slice(0, 14);
         let formatted = '';
         if (value.length > 0) formatted += value.substring(0, 4);
@@ -398,16 +421,14 @@ function formatDocumentoInput(input) {
         if (value.length > 10) formatted += '-' + value.substring(10, 13);
         if (value.length > 13) formatted += '-' + value.substring(13, 14);
         input.value = formatted;
-        
         validateField(input, CLIENTE_VALIDATORS.nit(formatted));
     } else {
-        // Formato DUI: 00000000-0 (9 digitos)
+        // DUI (9)
         value = value.slice(0, 9);
         let formatted = '';
         if (value.length > 0) formatted += value.substring(0, 8);
         if (value.length > 8) formatted += '-' + value.substring(8, 9);
         input.value = formatted;
-
         validateField(input, CLIENTE_VALIDATORS.dui(formatted));
     }
 }
@@ -422,17 +443,16 @@ function formatTelefonoInput(input) {
 }
 
 function validateNombreInput(input) {
-    // Permitir letras, espacios, puntos, comas y guiones (para empresas)
     const regex = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9\s.,-]+$/;
     validateField(input, regex.test(input.value) && input.value.length > 3);
 }
 
 function validateField(input, isValid) {
     if (isValid) {
-        input.style.borderColor = '#10b981'; // Verde
+        input.style.borderColor = '#10b981';
         input.style.backgroundColor = '#f0fdf4';
     } else {
-        input.style.borderColor = '#ef4444'; // Rojo
+        input.style.borderColor = '#ef4444';
         input.style.backgroundColor = '#fef2f2';
     }
 }
@@ -444,9 +464,7 @@ function updateClienteFormCalculos() {
     
     const txtCap = document.getElementById('txtCapacidad');
     txtCap.textContent = formatCurrency(cap);
-    txtCap.className = cap >= 0 
-        ? "text-xl font-bold text-green-600" 
-        : "text-xl font-bold text-red-600";
+    txtCap.className = cap >= 0 ? "text-xl font-bold text-green-600" : "text-xl font-bold text-red-600";
 }
 
 function cancelNewCliente() {
@@ -455,13 +473,13 @@ function cancelNewCliente() {
     loadClientes();
 }
 
-// Guardar Cliente (Lógica unificada)
+// --- GUARDAR ---
+
 async function saveCliente(event) {
     event.preventDefault();
 
     const isJuridico = document.querySelector('input[name="tipo_cliente"][value="juridica"]').checked;
     
-    // Recolectar datos comunes
     const formData = {
         tipo: isJuridico ? 'juridico' : 'natural',
         codigo: document.getElementById('codigo').value,
@@ -471,47 +489,38 @@ async function saveCliente(event) {
         egresos: parseFloat(document.getElementById('egresos').value || 0)
     };
 
-    // Recolectar datos específicos y validar
     if (isJuridico) {
         formData.razon_social = document.getElementById('nombre').value;
         formData.nombre_comercial = document.getElementById('nombre_comercial').value;
         formData.nit = document.getElementById('documento').value;
         formData.nrc = document.getElementById('nrc').value;
         formData.giro_economico = document.getElementById('giro').value;
+        // NUEVOS CAMPOS JURIDICOS
+        formData.fecha_constitucion = document.getElementById('fecha_constitucion').value;
         formData.representante_legal = document.getElementById('representante').value;
+        formData.dui_representante = document.getElementById('dui_representante').value;
 
+        // Validaciones Jurídicas
         if (!CLIENTE_VALIDATORS.nit(formData.nit)) {
-            showModal('Error', 'El NIT ingresado no es válido (Debe tener 14 dígitos).');
-            return;
+            return showModal('Error', 'NIT inválido (14 dígitos requeridos).');
         }
-        if (!CLIENTE_VALIDATORS.nrc(formData.nrc)) {
-            showModal('Error', 'El NRC es inválido.');
-            return;
+        if (!formData.razon_social) return showModal('Error', 'La Razón Social es obligatoria.');
+        if (!formData.representante_legal) return showModal('Error', 'Nombre del Representante es obligatorio.');
+        if (!CLIENTE_VALIDATORS.dui(formData.dui_representante)) {
+            return showModal('Error', 'DUI del Representante inválido.');
         }
-        if (!formData.razon_social) {
-            showModal('Error', 'La Razón Social es obligatoria.');
-            return;
-        }
+
     } else {
         formData.nombre = document.getElementById('nombre').value;
         formData.dui = document.getElementById('documento').value;
 
         if (!CLIENTE_VALIDATORS.dui(formData.dui)) {
-            showModal('Error', 'El DUI ingresado no es válido (Debe tener 9 dígitos).');
-            return;
+            return showModal('Error', 'DUI inválido (9 dígitos requeridos).');
         }
-        if (!formData.nombre) {
-            showModal('Error', 'El nombre es obligatorio.');
-            return;
-        }
+        if (!formData.nombre) return showModal('Error', 'El nombre es obligatorio.');
     }
 
-    if (!CLIENTE_VALIDATORS.telefono(formData.telefono)) {
-        showModal('Error', 'El teléfono debe tener formato 2222-2222.');
-        return;
-    }
-
-    // Mostrar loading en botón
+    // Guardar
     const btn = event.target.querySelector('button[type="submit"]');
     const originalText = btn.innerHTML;
     btn.disabled = true;
@@ -519,15 +528,11 @@ async function saveCliente(event) {
 
     try {
         let result;
-        // Determinar endpoint y método
-        // NOTA: Asegúrate de que tu backend acepte 'clientes.php' para ambos o usa la lógica de endpoint diferenciado
         const endpoint = isJuridico ? 'clientes_juridicos.php' : 'clientes.php';
         
         if (editingClienteId) {
-            // Actualizar
             result = await apiCall(`${endpoint}?id=${editingClienteId}`, 'PUT', formData);
         } else {
-            // Crear
             result = await apiCall(endpoint, 'POST', formData);
         }
 
@@ -537,53 +542,27 @@ async function saveCliente(event) {
             editingClienteId = null;
             loadClientes();
         } else {
-            showModal('Error', result?.error || 'No se pudo guardar el cliente.');
+            showModal('Error', result?.error || 'No se pudo guardar.');
         }
     } catch (error) {
         console.error(error);
-        showModal('Error', 'Error de conexión con el servidor.');
+        showModal('Error', 'Error de conexión.');
     } finally {
         btn.disabled = false;
         btn.innerHTML = originalText;
     }
 }
 
-// Función para eliminar cliente
 async function deleteCliente(id, nombre) {
-    if (confirm(`¿Está seguro de eliminar al cliente "${nombre}"? Esta acción no se puede deshacer.`)) {
+    if (confirm(`¿Eliminar al cliente "${nombre}"?`)) {
         showLoading();
-        try {
-            // Intenta borrar primero como cliente genérico
-            const result = await apiCall(`clientes.php?id=${id}`, 'DELETE');
-            
-            if (result && result.success) {
-                showModal('Éxito', result.message);
-                if (editingClienteId === id) {
-                    editingClienteId = null;
-                    clientesView = 'list';
-                }
-                loadClientes();
-            } else {
-                showModal('Error', result?.error || 'Error al eliminar cliente');
-                loadClientes();
-            }
-        } catch (error) {
-            console.error('Error al eliminar:', error);
-            showModal('Error', 'Ocurrió un error al intentar eliminar');
+        const result = await apiCall(`clientes.php?id=${id}`, 'DELETE');
+        if (result && result.success) {
+            showModal('Éxito', 'Cliente eliminado.');
+            loadClientes();
+        } else {
+            showModal('Error', 'No se pudo eliminar.');
             loadClientes();
         }
-    }
-}
-
-function loadClientesModule() {
-    if (typeof loadClientes === 'function') {
-        loadClientes();
-    } else {
-         document.getElementById('main-content').innerHTML = `
-            <div class="card p-8 text-center">
-                <h2 class="text-2xl font-bold mb-4">Módulo de Activos</h2>
-                <p class="text-gray-500">Módulo en construcción o función loadActivos() no encontrada.</p>
-            </div>
-        `;
     }
 }
