@@ -337,7 +337,7 @@ async function editGarantia(id) {
     showLoading();
     // Simulación de búsqueda por ID (Idealmente el backend tendría endpoint getById)
     try {
-        const todas = await apiCall('includes/garantias.php');
+        const todas = await apiCall('garantias.php');
         
         // Si la respuesta es un array, buscamos. Si es error, manejamos.
         if (Array.isArray(todas)) {
@@ -389,7 +389,7 @@ async function saveGarantia(event) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
 
     try {
-        let endpoint = 'includes/garantias.php';
+        let endpoint = 'garantias.php';
         // Nota: Asumimos POST para crear. Si tu backend soporta PUT para editar, 
         // deberías cambiar el método aquí si 'id' existe.
         

@@ -4,7 +4,7 @@ const appState = {
 };
 
 // Inicializar cuando el DOM esté listo
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     console.log('🚀 Aplicación iniciada');
     initializeApp();
 });
@@ -12,19 +12,19 @@ document.addEventListener('DOMContentLoaded', function() {
 function initializeApp() {
     // Cargar dashboard por defecto
     loadDashboard();
-    
+
     // Configurar navegación
     setupNavigation();
-    
+
     console.log('✅ App inicializada correctamente');
 }
 
 function setupNavigation() {
     // Seleccionar todos los botones de navegación (Sidebar y Mobile)
     const buttons = document.querySelectorAll('.tab-btn, .tab-button');
-    
+
     buttons.forEach(button => {
-        button.addEventListener('click', function() {
+        button.addEventListener('click', function () {
             // Extraer el nombre del tab del atributo onclick o data-tab
             const rawAttr = this.getAttribute('onclick') || this.getAttribute('data-tab');
             let tabName = '';
@@ -44,10 +44,10 @@ function setupNavigation() {
 }
 
 // Función global para cambiar de pestaña desde cualquier lugar
-window.setActiveTab = function(tab) {
+window.setActiveTab = function (tab) {
     console.log('📌 Cambiando a tab:', tab);
     appState.activeTab = tab;
-    
+
     updateActiveTabButtons();
     renderCurrentTab();
 }
@@ -58,7 +58,7 @@ function updateActiveTabButtons() {
         btn.classList.remove('bg-blue-600');
         btn.classList.add('hover:bg-slate-700');
     });
-    
+
     // 2. Definir palabras clave para mapear tab -> botón
     const tabKeywords = {
         'dashboard': ['Dashboard'],
@@ -74,7 +74,7 @@ function updateActiveTabButtons() {
     document.querySelectorAll('.tab-btn, .tab-button').forEach(btn => {
         const text = btn.textContent;
         const onclickAttr = btn.getAttribute('onclick') || '';
-        
+
         const matchText = keywords.some(k => text.includes(k));
         const matchFunc = onclickAttr.includes(appState.activeTab);
 
@@ -96,27 +96,39 @@ function renderCurrentTab() {
             break;
         case 'clientes':
             // Esta función está en js/modules/clientes.js
-            if(typeof loadClientesModule === 'function') loadClientesModule();
+            if (typeof loadClientesModule === 'function') loadClientesModule();
             else console.error('Falta clientes.js');
             break;
         case 'creditos':
             // Esta función debe estar en js/modules/prestamos.js
-            if(typeof loadPrestamosModule === 'function') loadPrestamosModule();
+            if (typeof loadPrestamosModule === 'function') loadPrestamosModule();
             else console.error('Falta prestamos.js');
             break;
         case 'garantias':
             // Esta función está en js/modules/garantias.js
-            if(typeof loadGarantiasModule === 'function') loadGarantiasModule();
+            if (typeof loadGarantiasModule === 'function') loadGarantiasModule();
             else console.error('Falta garantias.js');
             break;
         case 'activos':
             // Esta función debe estar en js/modules/activos.js
-            if(typeof loadActivosModule === 'function') loadActivosModule();
+            if (typeof loadActivosModule === 'function') loadActivosModule();
             else console.error('Falta activos.js');
             break;
+        case 'financiero':
+            if (typeof loadFinancieroModule === 'function') loadFinancieroModule();
+            else console.error('Falta financiero.js');
+            break;
         case 'usuarios':
-            if(typeof loadUsuariosModule === 'function') loadUsuariosModule();
+            if (typeof loadUsuariosModule === 'function') loadUsuariosModule();
             else console.error('Falta usuarios.js');
+            break;
+        case 'creditos_corp':
+            // Esta función debe estar en js/modules/prestamos.js
+            if (typeof loadCreditosCorpModule === 'function') loadCreditosCorpModule();
+            else console.error('Falta creditos_corp.js');
+            break;
+        case 'configuracion':
+            if (typeof loadConfiguracionModule === 'function') loadConfiguracionModule();
             break;
         default:
             loadDashboard();
@@ -166,6 +178,6 @@ function loadDashboard() {
             </div>
         </div>
     `;
-    
+
     document.getElementById('main-content').innerHTML = content;
 }

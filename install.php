@@ -314,6 +314,143 @@ try {
         INDEX idx_tipo_garantia (tipo_garantia, garantia_id)
     ) ENGINE=InnoDB");
 
+     // Zonas Geográficas (Para dividir la cartera)
+    $conn->exec("CREATE TABLE IF NOT EXISTS zonas (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        codigo VARCHAR(10) UNIQUE,
+        responsable VARCHAR(100)
+    ) ENGINE=InnoDB");
+
+    // Asesores de Crédito (Ejecutivos)
+    $conn->exec("CREATE TABLE IF NOT EXISTS asesores (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL,
+        zona_id INT,
+        codigo_empleado VARCHAR(20),
+        telefono VARCHAR(20),
+        activo TINYINT(1) DEFAULT 1,
+        FOREIGN KEY (zona_id) REFERENCES zonas(id)
+    ) ENGINE=InnoDB");
+
+    // Políticas de Crédito (La "Receta" del préstamo: Tasas, Plazos, Reglas)
+    $conn->exec("CREATE TABLE IF NOT EXISTS politicas_credito (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100) NOT NULL COMMENT 'Ej: Hipotecario, Agricola, Pyme',
+        tasa_interes_anual DECIMAL(5,2) NOT NULL,
+        tasa_mora_anual DECIMAL(5,2) NOT NULL,
+        comision_admin DECIMAL(5,2) DEFAULT 0.00 COMMENT '% sobre saldo o cuota',
+        plazo_maximo_meses INT NOT NULL,
+        dias_gracia_mora INT DEFAULT 5,
+        dias_para_incobrable INT DEFAULT 90 COMMENT 'Días de atraso para castigar crédito',
+        formato_contrato TEXT COMMENT 'Plantilla HTML del contrato',
+        activo TINYINT(1) DEFAULT 1
+    ) ENGINE=InnoDB");
+
+    // 2. CRÉDITO MAESTRO (ENCABEZADO)
+    // -----------------------------------------------------
+    $conn->exec("CREATE TABLE IF NOT EXISTS creditos_corporativos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        codigo_contrato VARCHAR(50) UNIQUE NOT NULL,
+        cliente_id INT NOT NULL, -- Vinculo con tabla clientes_juridicos (o clientes general)
+        politica_id INT NOT NULL,
+        asesor_id INT,
+        zona_id INT,
+        
+        -- Valores Financieros
+        monto_solicitado DECIMAL(15,2) NOT NULL,
+        monto_aprobado DECIMAL(15,2) NOT NULL,
+        monto_entregado DECIMAL(15,2) NOT NULL, -- Puede ser menor por comisiones iniciales
+        saldo_capital DECIMAL(15,2) NOT NULL,
+        saldo_mora DECIMAL(15,2) DEFAULT 0.00,
+        
+        -- Condiciones
+        plazo_meses INT NOT NULL,
+        tasa_interes_aplicada DECIMAL(5,2) NOT NULL,
+        tasa_mora_aplicada DECIMAL(5,2) NOT NULL,
+        dia_pago INT NOT NULL,
+        frecuencia_pago ENUM('mensual', 'quincenal', 'trimestral') DEFAULT 'mensual',
+        
+        -- Estados y Clasificación
+        estado ENUM('solicitud', 'aprobado', 'activo', 'mora', 'judicial', 'incobrable', 'cancelado', 'refinanciado') DEFAULT 'solicitud',
+        categoria_riesgo CHAR(1) DEFAULT 'A' COMMENT 'A, B, C, D (Se actualiza con triggers o crons)',
+        dias_mora_acumulados INT DEFAULT 0,
+        
+        -- Auditoría
+        destino_fondos TEXT,
+        credito_anterior_id INT DEFAULT NULL COMMENT 'Si es refinanciamiento',
+        fecha_desembolso DATE,
+        fecha_vencimiento DATE,
+        fecha_ultimo_pago DATE,
+        fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        
+        FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+        FOREIGN KEY (politica_id) REFERENCES politicas_credito(id),
+        FOREIGN KEY (asesor_id) REFERENCES asesores(id)
+    ) ENGINE=InnoDB");
+
+    // 3. VINCULACIÓN DE GARANTÍAS (MULTITABLA)
+    // -----------------------------------------------------
+    // Permite atar Hipotecas, Prendas (Garantias) o Fiadores a un crédito específico
+    $conn->exec("CREATE TABLE IF NOT EXISTS creditos_garantias_vinculo (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        credito_id INT NOT NULL,
+        origen_tabla ENUM('garantia_bien', 'hipoteca', 'fiador') NOT NULL,
+        referencia_id INT NOT NULL, -- ID de la tabla correspondiente
+        valor_cobertura DECIMAL(15,2) NOT NULL,
+        descripcion_corta VARCHAR(255),
+        FOREIGN KEY (credito_id) REFERENCES creditos_corporativos(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB");
+
+    // 4. PLAN DE PAGOS (PROYECCIÓN FINANCIERA)
+    // -----------------------------------------------------
+    $conn->exec("CREATE TABLE IF NOT EXISTS plan_pagos_corp (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        credito_id INT NOT NULL,
+        numero_cuota INT NOT NULL,
+        fecha_vencimiento DATE NOT NULL,
+        
+        -- Proyección
+        capital_programado DECIMAL(15,2) NOT NULL,
+        interes_programado DECIMAL(15,2) NOT NULL,
+        comision_programada DECIMAL(15,2) DEFAULT 0.00,
+        cuota_total DECIMAL(15,2) NOT NULL,
+        saldo_proyectado DECIMAL(15,2) NOT NULL,
+        
+        -- Realidad
+        estado ENUM('pendiente', 'pagado', 'parcial', 'vencido') DEFAULT 'pendiente',
+        fecha_pago_real DATE,
+        mora_generada DECIMAL(15,2) DEFAULT 0.00,
+        monto_pagado_real DECIMAL(15,2) DEFAULT 0.00,
+        
+        FOREIGN KEY (credito_id) REFERENCES creditos_corporativos(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB");
+
+    // 5. RECIBOS DE COBRO (CAJA)
+    // -----------------------------------------------------
+    $conn->exec("CREATE TABLE IF NOT EXISTS recibos_corp (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        credito_id INT NOT NULL,
+        codigo_recibo VARCHAR(50) UNIQUE,
+        fecha_transaccion DATETIME DEFAULT CURRENT_TIMESTAMP,
+        
+        monto_total_pagado DECIMAL(15,2) NOT NULL,
+        
+        -- Distribución del Pago (Cascada de Prelación)
+        abono_mora DECIMAL(15,2) DEFAULT 0.00,
+        abono_comision DECIMAL(15,2) DEFAULT 0.00,
+        abono_interes DECIMAL(15,2) DEFAULT 0.00,
+        abono_capital DECIMAL(15,2) DEFAULT 0.00,
+        
+        saldo_anterior DECIMAL(15,2) NOT NULL,
+        saldo_actual DECIMAL(15,2) NOT NULL,
+        
+        concepto TEXT,
+        usuario_cajero VARCHAR(100),
+        
+        FOREIGN KEY (credito_id) REFERENCES creditos_corporativos(id)
+    ) ENGINE=InnoDB");
+
     // ---------------------------------------------------------
     // BLOQUE 4: INSERTAR DATOS POR DEFECTO
     // ---------------------------------------------------------
