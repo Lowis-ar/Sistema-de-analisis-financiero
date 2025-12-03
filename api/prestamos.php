@@ -470,8 +470,62 @@ function getPrestamoById($conn, $id) {
 }
 
 function handlePut($conn) {
-    // Para futuras actualizaciones (pagos, cambios de estado, etc.)
-    http_response_code(501);
-    echo json_encode(['message' => 'Función PUT en desarrollo']);
+    function handlePut($conn) {
+    $input = json_decode(file_get_contents('php://input'), true);
+    
+    if (isset($_GET['accion']) && $_GET['accion'] == 'marcar_incobrable') {
+        marcarComoIncobrable($conn, $_GET['id']);
+    } else {
+        http_response_code(400);
+        echo json_encode(['error' => 'Acción no válida']);
+    }
+}
+
+function marcarComoIncobrable($conn, $prestamoId) {
+    try {
+        // Verificar que el préstamo tiene más de 180 días de mora
+        $query = "SELECT dias_mora FROM prestamos WHERE id = :id";
+        $stmt = $conn->prepare($query);
+        $stmt->execute([':id' => $prestamoId]);
+        $prestamo = $stmt->fetch();
+        
+        if (!$prestamo) {
+            throw new Exception('Préstamo no encontrado');
+        }
+        
+        if ($prestamo['dias_mora'] <= 180) {
+            throw new Exception('El préstamo no cumple con los criterios para ser marcado como incobrable');
+        }
+        
+        // Marcar como incobrable
+        $updateQuery = "
+            UPDATE prestamos 
+            SET estado = 'incobrable',
+                observaciones = CONCAT(COALESCE(observaciones, ''), ' Marcado como incobrable el ', CURDATE())
+            WHERE id = :id
+        ";
+        
+        $stmtUpdate = $conn->prepare($updateQuery);
+        $stmtUpdate->execute([':id' => $prestamoId]);
+        
+        // Registrar en historial de incobrables
+        $historialQuery = "
+            INSERT INTO historial_incobrables (prestamo_id, fecha_marcado, motivo) 
+            VALUES (:prestamo_id, NOW(), 'Más de 180 días en mora según política interna')
+        ";
+        
+        $stmtHistorial = $conn->prepare($historialQuery);
+        $stmtHistorial->execute([':prestamo_id' => $prestamoId]);
+        
+        echo json_encode([
+            'success' => true,
+            'message' => 'Préstamo marcado como incobrable exitosamente'
+        ]);
+        
+    } catch(Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+}
 }
 ?>

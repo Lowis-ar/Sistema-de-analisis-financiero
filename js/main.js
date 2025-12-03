@@ -177,6 +177,48 @@ const PORCENTAJES_DEPRECIACION = {
     otros: { porcentaje: 0.50, vida: 2, label: 'Otros Bienes (50%)' }
 };
 
+
+
+// Función para formatear fechas en español
+function formatDateSpanish(dateString) {
+    const date = new Date(dateString);
+    const options = { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric',
+        weekday: 'long'
+    };
+    return date.toLocaleDateString('es-SV', options);
+}
+
+// Función para calcular días entre fechas
+function calcularDiasEntreFechas(fecha1, fecha2) {
+    const unDia = 24 * 60 * 60 * 1000;
+    const diff = Math.abs(new Date(fecha1) - new Date(fecha2));
+    return Math.floor(diff / unDia);
+}
+
+// Función para validar montos según ley salvadoreña
+function validarMontoPago(monto, saldoActual, tipoPago) {
+    const errores = [];
+    
+    if (monto <= 0) {
+        errores.push('El monto debe ser mayor a cero');
+    }
+    
+    if (tipoPago === 'parcial' && monto > saldoActual) {
+        errores.push('El pago parcial no puede exceder el saldo actual');
+    }
+    
+    // Límites según regulación salvadoreña
+    if (monto > 1000000) { // 1 millón de dólares
+        errores.push('Montos superiores a $1,000,000 requieren autorización especial');
+    }
+    
+    return errores;
+}
+
+
 // ==========================================
 // 5. HACER FUNCIONES GLOBALES
 // ==========================================

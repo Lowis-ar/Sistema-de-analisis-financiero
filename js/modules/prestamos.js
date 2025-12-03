@@ -967,6 +967,16 @@ async function cargarListaPrestamos() {
                                 ${prestamo.estado || 'normal'}
                             </span>
                         </td>
+
+                        <td class="px-4 py-3 text-right">
+                            <button onclick="mostrarModalPago(${prestamo.id})" 
+                                class="text-green-600 hover:text-green-900 inline-flex items-center" 
+                                title="Registrar pago">
+                            <i class="fas fa-dollar-sign mr-1"></i>
+                        <span class="hiddesn md:inline">Pago</span>
+                        </button>
+                        </td>
+
                     </tr>
                 `;
             });
@@ -1053,3 +1063,610 @@ function verGarantiasPrestamo(id) {
 
 // No olvides exportarla:
 window.verGarantiasPrestamo = verGarantiasPrestamo;
+
+// ==========================================
+// SISTEMA DE PAGOS Y REFINANCIAMIENTO
+// ==========================================
+
+// Variables globales para pagos
+let prestamoActivo = null;
+let tablaAmortizacion = [];
+
+// Modal para pagos
+function mostrarModalPago(prestamoId) {
+    prestamoActivo = null;
+    tablaAmortizacion = [];
+    
+    // Cargar datos del préstamo
+    cargarDatosPrestamoParaPago(prestamoId);
+}
+
+async function cargarDatosPrestamoParaPago(prestamoId) {
+    try {
+        console.log(`📋 Cargando datos para pago del préstamo #${prestamoId}`);
+        
+        // Mostrar loading
+        showLoadingModal('Cargando información del préstamo...');
+        
+        // Obtener datos del préstamo
+        const response = await apiCall(`prestamos.php?id=${prestamoId}`);
+        
+        if (response.error) {
+            showNotification(response.error, 'error');
+            return;
+        }
+        
+        prestamoActivo = response;
+        
+        // Calcular tabla de amortización
+        calcularTablaAmortizacion(prestamoActivo);
+        
+        // Mostrar modal de pago
+        mostrarModalPagoHTML();
+        
+    } catch (error) {
+        console.error('Error cargando préstamo:', error);
+        showNotification('Error al cargar información del préstamo', 'error');
+    }
+}
+
+function calcularTablaAmortizacion(prestamo) {
+    const monto = parseFloat(prestamo.monto);
+    const tasaMensual = (parseFloat(prestamo.tasa) / 100) / 12;
+    const plazo = parseInt(prestamo.plazo);
+    const cuota = parseFloat(prestamo.cuota);
+    const saldoActual = parseFloat(prestamo.saldo_actual);
+    const fechaOtorgamiento = new Date(prestamo.fecha_otorgamiento);
+    
+    let saldo = monto;
+    tablaAmortizacion = [];
+    
+    for (let i = 1; i <= plazo; i++) {
+        const interes = saldo * tasaMensual;
+        const capital = cuota - interes;
+        
+        // Solo mostrar hasta el saldo actual
+        if (saldo <= 0.01) break;
+        
+        const fechaPago = new Date(fechaOtorgamiento);
+        fechaPago.setMonth(fechaPago.getMonth() + i);
+        
+        tablaAmortizacion.push({
+            cuota_numero: i,
+            fecha_vencimiento: fechaPago.toISOString().split('T')[0],
+            cuota_mensual: cuota,
+            capital: capital,
+            interes: interes,
+            saldo_pendiente: saldo - capital,
+            estado: saldo <= saldoActual ? 'pendiente' : 'pagado'
+        });
+        
+        saldo -= capital;
+    }
+    
+    // Calcular días en mora
+    const hoy = new Date();
+    const ultimoPago = prestamo.ultimo_pago ? new Date(prestamo.ultimo_pago) : fechaOtorgamiento;
+    const diasMora = Math.floor((hoy - ultimoPago) / (1000 * 60 * 60 * 24)) - 30; // 30 días de gracia
+    
+    prestamoActivo.dias_mora = diasMora > 0 ? diasMora : 0;
+    
+    // Verificar si es incobrable (más de 180 días)
+    if (diasMora > 180) {
+        prestamoActivo.estado = 'incobrable';
+    }
+}
+
+function mostrarModalPagoHTML() {
+    if (!prestamoActivo) return;
+    
+    const modalHTML = `
+        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="flex justify-between items-center p-6 border-b">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800">Registro de Pago</h3>
+                        <p class="text-sm text-gray-600">Préstamo #${prestamoActivo.id}</p>
+                    </div>
+                    <button onclick="cerrarModalPago()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times text-2xl"></i>
+                    </button>
+                </div>
+                
+                <!-- Información del Préstamo -->
+                <div class="p-6 border-b">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <p class="text-sm text-blue-600 font-medium">Cliente</p>
+                            <p class="text-lg font-bold">${prestamoActivo.cliente_nombre}</p>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-lg">
+                            <p class="text-sm text-green-600 font-medium">Saldo Actual</p>
+                            <p class="text-2xl font-bold">${formatCurrency(prestamoActivo.saldo_actual)}</p>
+                        </div>
+                        <div class="bg-purple-50 p-4 rounded-lg">
+                            <p class="text-sm text-purple-600 font-medium">Cuota Mensual</p>
+                            <p class="text-xl font-bold">${formatCurrency(prestamoActivo.cuota)}</p>
+                        </div>
+                        <div class="${prestamoActivo.dias_mora > 0 ? 'bg-red-50' : 'bg-yellow-50'} p-4 rounded-lg">
+                            <p class="text-sm ${prestamoActivo.dias_mora > 0 ? 'text-red-600' : 'text-yellow-600'} font-medium">Días en Mora</p>
+                            <p class="text-xl font-bold">${prestamoActivo.dias_mora || 0}</p>
+                        </div>
+                    </div>
+                    
+                    ${prestamoActivo.dias_mora > 0 ? `
+                        <div class="mt-4 p-3 ${prestamoActivo.dias_mora > 180 ? 'bg-red-100 border border-red-300' : 'bg-yellow-100 border border-yellow-300'} rounded-lg">
+                            <div class="flex items-center">
+                                <i class="fas ${prestamoActivo.dias_mora > 180 ? 'fa-exclamation-triangle text-red-600' : 'fa-exclamation-circle text-yellow-600'} mr-2"></i>
+                                <p class="${prestamoActivo.dias_mora > 180 ? 'text-red-700' : 'text-yellow-700'} font-medium">
+                                    ${prestamoActivo.dias_mora > 180 ? 
+                                        '⚠️ CUENTA INCOBRABLE (Más de 180 días de mora)' : 
+                                        `⚠️ PRÉSTAMO EN MORA (${prestamoActivo.dias_mora} días)`}
+                                </p>
+                            </div>
+                            ${prestamoActivo.dias_mora > 0 && prestamoActivo.dias_mora <= 180 ? `
+                                <p class="text-sm ${prestamoActivo.dias_mora > 90 ? 'text-red-600' : 'text-yellow-600'} mt-1">
+                                    Interés moratorio aplicable según Ley del Sistema Financiero
+                                </p>
+                            ` : ''}
+                        </div>
+                    ` : ''}
+                </div>
+                
+                <!-- Sección de Pago -->
+                <div class="p-6 border-b">
+                    <h4 class="text-lg font-semibold text-gray-700 mb-4">Realizar Pago</h4>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Formulario de Pago -->
+                        <div>
+                            <form id="formPago" onsubmit="return false;">
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Tipo de Pago *</label>
+                                        <select id="tipoPago" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" onchange="cambiarTipoPago()">
+                                            <option value="parcial">Pago Parcial</option>
+                                            <option value="total">Pago Total</option>
+                                            <option value="cuota">Pago de Cuota</option>
+                                            <option value="refinanciar">Refinanciar Préstamo</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div id="montoPagoContainer">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Monto a Pagar ($) *</label>
+                                        <input type="number" id="montoPago" step="0.01" min="1" 
+                                               class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                               oninput="calcularDesglosePago()">
+                                    </div>
+                                    
+                                    <div id="cuotasPendientesContainer" class="hidden">
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Número de Cuotas a Pagar</label>
+                                        <input type="number" id="cuotasPendientes" min="1" 
+                                               class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                               oninput="calcularPagoCuotas()">
+                                    </div>
+                                    
+                                    <div id="refinanciamientoContainer" class="hidden space-y-4">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Nuevo Plazo (meses) *</label>
+                                            <input type="number" id="nuevoPlazo" min="1" max="360" 
+                                                   class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Nueva Tasa Anual (%) *</label>
+                                            <input type="number" id="nuevaTasa" step="0.01" min="0.1" max="100" 
+                                                   class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Fecha de Pago *</label>
+                                        <input type="date" id="fechaPago" 
+                                               class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                               value="${new Date().toISOString().split('T')[0]}">
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Método de Pago *</label>
+                                        <select id="metodoPago" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                            <option value="efectivo">Efectivo</option>
+                                            <option value="transferencia">Transferencia Bancaria</option>
+                                            <option value="cheque">Cheque</option>
+                                            <option value="tarjeta">Tarjeta de Débito/Crédito</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Referencia/Número de Transacción</label>
+                                        <input type="text" id="referenciaPago" 
+                                               class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                               placeholder="Opcional">
+                                    </div>
+                                    
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Observaciones</label>
+                                        <textarea id="observacionesPago" rows="2" 
+                                                  class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        
+                        <!-- Resumen del Pago -->
+                        <div>
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <h5 class="font-semibold text-gray-700 mb-3">Desglose del Pago</h5>
+                                <div class="space-y-2">
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">Capital:</span>
+                                        <span id="desgloseCapital" class="font-semibold">$0.00</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">Interés Ordinario:</span>
+                                        <span id="desgloseInteres" class="font-semibold">$0.00</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">Interés Moratorio:</span>
+                                        <span id="desgloseMora" class="font-semibold">$0.00</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-600">Comisiones:</span>
+                                        <span id="desgloseComision" class="font-semibold">$0.00</span>
+                                    </div>
+                                    <hr class="my-2 border-gray-300">
+                                    <div class="flex justify-between text-lg font-bold">
+                                        <span class="text-gray-800">Total a Pagar:</span>
+                                        <span id="desgloseTotal" class="text-blue-600">$0.00</span>
+                                    </div>
+                                </div>
+                                
+                                <div id="nuevaCuotaContainer" class="mt-4 p-3 bg-blue-50 rounded-lg hidden">
+                                    <h6 class="font-semibold text-blue-700 mb-1">Nueva Cuota (Refinanciamiento)</h6>
+                                    <p id="nuevaCuota" class="text-xl font-bold text-blue-800">$0.00</p>
+                                </div>
+                            </div>
+                            
+                            <!-- Botones de Acción -->
+                            <div class="mt-4 space-y-3">
+                                <button onclick="procesarPago()" 
+                                        class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center">
+                                    <i class="fas fa-check-circle mr-2"></i> Procesar Pago
+                                </button>
+                                
+                                <button onclick="cerrarModalPago()" 
+                                        class="w-full bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-3 px-4 rounded-lg transition duration-200">
+                                    Cancelar
+                                </button>
+                                
+                                ${prestamoActivo.dias_mora > 180 ? `
+                                    <button onclick="marcarComoIncobrable()" 
+                                            class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center">
+                                        <i class="fas fa-exclamation-triangle mr-2"></i> Marcar como Incobrable
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tabla de Amortización -->
+                <div class="p-6">
+                    <h4 class="text-lg font-semibold text-gray-700 mb-4">Tabla de Amortización</h4>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase"># Cuota</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha Vencimiento</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Capital</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Interés</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Saldo</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                ${tablaAmortizacion.map((cuota, index) => `
+                                    <tr class="${cuota.estado === 'pendiente' ? 'bg-yellow-50' : ''}">
+                                        <td class="px-4 py-3 text-sm">${cuota.cuota_numero}</td>
+                                        <td class="px-4 py-3 text-sm">${new Date(cuota.fecha_vencimiento).toLocaleDateString('es-SV')}</td>
+                                        <td class="px-4 py-3 text-sm font-medium">${formatCurrency(cuota.capital)}</td>
+                                        <td class="px-4 py-3 text-sm">${formatCurrency(cuota.interes)}</td>
+                                        <td class="px-4 py-3 text-sm font-semibold">${formatCurrency(cuota.cuota_mensual)}</td>
+                                        <td class="px-4 py-3 text-sm">${formatCurrency(cuota.saldo_pendiente)}</td>
+                                        <td class="px-4 py-3 text-sm">
+                                            <span class="px-2 py-1 text-xs font-semibold rounded-full ${cuota.estado === 'pagado' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                                                ${cuota.estado === 'pagado' ? 'Pagado' : 'Pendiente'}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Crear y mostrar modal
+    const modalContainer = document.createElement('div');
+    modalContainer.id = 'modal-pago-container';
+    modalContainer.innerHTML = modalHTML;
+    document.body.appendChild(modalContainer);
+    
+    // Inicializar cálculos
+    calcularDesglosePago();
+}
+
+function cambiarTipoPago() {
+    const tipoPago = document.getElementById('tipoPago').value;
+    const montoPagoContainer = document.getElementById('montoPagoContainer');
+    const cuotasPendientesContainer = document.getElementById('cuotasPendientesContainer');
+    const refinanciamientoContainer = document.getElementById('refinanciamientoContainer');
+    const nuevaCuotaContainer = document.getElementById('nuevaCuotaContainer');
+    
+    // Resetear todos
+    montoPagoContainer.classList.remove('hidden');
+    cuotasPendientesContainer.classList.add('hidden');
+    refinanciamientoContainer.classList.add('hidden');
+    nuevaCuotaContainer.classList.add('hidden');
+    
+    const montoPagoInput = document.getElementById('montoPago');
+    
+    switch(tipoPago) {
+        case 'parcial':
+            montoPagoInput.min = '1';
+            montoPagoInput.max = parseFloat(prestamoActivo.saldo_actual).toFixed(2);
+            montoPagoInput.value = '';
+            break;
+            
+        case 'total':
+            montoPagoInput.value = parseFloat(prestamoActivo.saldo_actual).toFixed(2);
+            montoPagoInput.readOnly = true;
+            break;
+            
+        case 'cuota':
+            montoPagoContainer.classList.add('hidden');
+            cuotasPendientesContainer.classList.remove('hidden');
+            break;
+            
+        case 'refinanciar':
+            montoPagoContainer.classList.add('hidden');
+            refinanciamientoContainer.classList.remove('hidden');
+            nuevaCuotaContainer.classList.remove('hidden');
+            
+            // Configurar valores por defecto
+            document.getElementById('nuevoPlazo').value = Math.max(parseInt(prestamoActivo.plazo), 6);
+            document.getElementById('nuevaTasa').value = parseFloat(prestamoActivo.tasa).toFixed(2);
+            
+            calcularNuevaCuotaRefinanciamiento();
+            break;
+    }
+    
+    calcularDesglosePago();
+}
+
+function calcularPagoCuotas() {
+    const cuotas = parseInt(document.getElementById('cuotasPendientes').value) || 1;
+    const montoTotal = prestamoActivo.cuota * cuotas;
+    document.getElementById('montoPago').value = montoTotal.toFixed(2);
+    calcularDesglosePago();
+}
+
+function calcularNuevaCuotaRefinanciamiento() {
+    const nuevoPlazo = parseInt(document.getElementById('nuevoPlazo').value) || prestamoActivo.plazo;
+    const nuevaTasa = parseFloat(document.getElementById('nuevaTasa').value) || prestamoActivo.tasa;
+    const saldoActual = parseFloat(prestamoActivo.saldo_actual);
+    
+    // Cálculo de nueva cuota según sistema francés
+    const tasaMensual = (nuevaTasa / 100) / 12;
+    const nuevaCuota = (saldoActual * tasaMensual) / (1 - Math.pow(1 + tasaMensual, -nuevoPlazo));
+    
+    document.getElementById('nuevaCuota').textContent = formatCurrency(nuevaCuota);
+}
+
+function calcularDesglosePago() {
+    if (!prestamoActivo) return;
+    
+    const tipoPago = document.getElementById('tipoPago').value;
+    let montoPago = parseFloat(document.getElementById('montoPago').value) || 0;
+    
+    // Si es pago por cuotas, calcular monto
+    if (tipoPago === 'cuota') {
+        const cuotas = parseInt(document.getElementById('cuotasPendientes').value) || 1;
+        montoPago = prestamoActivo.cuota * cuotas;
+    }
+    
+    // Cálculos según ley salvadoreña
+    const saldoActual = parseFloat(prestamoActivo.saldo_actual);
+    const diasMora = prestamoActivo.dias_mora || 0;
+    
+    // 1. Capital (máximo el saldo actual)
+    const capital = Math.min(montoPago, saldoActual);
+    
+    // 2. Interés ordinario (proporcional según días)
+    const interesDiario = (saldoActual * (prestamoActivo.tasa / 100)) / 365;
+    const diasDesdeUltimoPago = Math.max(diasMora, 30); // Mínimo 30 días (una cuota)
+    const interesOrdinario = interesDiario * diasDesdeUltimoPago;
+    
+    // 3. Interés moratorio (solo si hay mora según Ley del Sistema Financiero)
+    let interesMoratorio = 0;
+    if (diasMora > 0 && diasMora <= 180) {
+        // Tasa moratoria: 2% mensual sobre saldo en mora (Art. 57 Ley de Bancos)
+        const tasaMoratoriaMensual = 0.02;
+        const tasaMoratoriaDiaria = tasaMoratoriaMensual / 30;
+        interesMoratorio = saldoActual * tasaMoratoriaDiaria * diasMora;
+    }
+    
+    // 4. Comisiones (1% por refinanciamiento según práctica común)
+    let comision = 0;
+    if (tipoPago === 'refinanciar') {
+        comision = saldoActual * 0.01; // 1% del saldo
+    }
+    
+    // 5. Total
+    const total = capital + interesOrdinario + interesMoratorio + comision;
+    
+    // Actualizar UI
+    document.getElementById('desgloseCapital').textContent = formatCurrency(capital);
+    document.getElementById('desgloseInteres').textContent = formatCurrency(interesOrdinario);
+    document.getElementById('desgloseMora').textContent = formatCurrency(interesMoratorio);
+    document.getElementById('desgloseComision').textContent = formatCurrency(comision);
+    document.getElementById('desgloseTotal').textContent = formatCurrency(total);
+    
+    // Si es refinanciamiento, recalcular cuota
+    if (tipoPago === 'refinanciar') {
+        calcularNuevaCuotaRefinanciamiento();
+    }
+}
+
+async function procesarPago() {
+    if (!prestamoActivo) return;
+    
+    const tipoPago = document.getElementById('tipoPago').value;
+    const montoPago = parseFloat(document.getElementById('montoPago').value) || 0;
+    const fechaPago = document.getElementById('fechaPago').value;
+    const metodoPago = document.getElementById('metodoPago').value;
+    const referencia = document.getElementById('referenciaPago').value;
+    const observaciones = document.getElementById('observacionesPago').value;
+    
+    // Validaciones
+    if (montoPago <= 0) {
+        showNotification('Ingrese un monto válido', 'error');
+        return;
+    }
+    
+    if (!fechaPago) {
+        showNotification('Seleccione una fecha de pago', 'error');
+        return;
+    }
+    
+    // Confirmación
+    const confirmMessage = tipoPago === 'refinanciar' ? 
+        `¿Confirmar refinanciamiento del préstamo por ${formatCurrency(prestamoActivo.saldo_actual)}?` :
+        `¿Confirmar pago de ${formatCurrency(montoPago)} al préstamo #${prestamoActivo.id}?`;
+    
+    if (!confirm(confirmMessage)) return;
+    
+    try {
+        // Preparar datos para el servidor
+        const datosPago = {
+            prestamo_id: prestamoActivo.id,
+            tipo_pago: tipoPago,
+            monto_pagado: montoPago,
+            fecha_pago: fechaPago,
+            metodo_pago: metodoPago,
+            referencia: referencia,
+            observaciones: observaciones,
+            dias_mora: prestamoActivo.dias_mora || 0
+        };
+        
+        // Si es refinanciamiento, agregar datos adicionales
+        if (tipoPago === 'refinanciar') {
+            datosPago.nuevo_plazo = parseInt(document.getElementById('nuevoPlazo').value);
+            datosPago.nueva_tasa = parseFloat(document.getElementById('nuevaTasa').value);
+            datosPago.nueva_cuota = parseFloat(document.getElementById('nuevaCuota').textContent.replace(/[^0-9.-]+/g, ""));
+        }
+        
+        console.log('Enviando datos de pago:', datosPago);
+        
+        // Enviar al servidor
+        const response = await apiCall('pagos.php', 'POST', datosPago);
+        
+        if (response.success) {
+            showNotification(response.message, 'success');
+            cerrarModalPago();
+            
+            // Recargar lista de préstamos
+            setTimeout(() => {
+                cargarListaPrestamos();
+            }, 1000);
+            
+        } else {
+            showNotification(response.error || 'Error al procesar el pago', 'error');
+        }
+        
+    } catch (error) {
+        console.error('Error procesando pago:', error);
+        showNotification('Error de conexión con el servidor', 'error');
+    }
+}
+
+async function marcarComoIncobrable() {
+    if (!prestamoActivo || prestamoActivo.dias_mora <= 180) return;
+    
+    if (!confirm('⚠️ ¿Marcar este préstamo como incobrable? Esta acción es irreversible y afectará los reportes financieros.')) {
+        return;
+    }
+    
+    try {
+        const response = await apiCall(`prestamos.php?accion=marcar_incobrable&id=${prestamoActivo.id}`, 'PUT');
+        
+        if (response.success) {
+            showNotification('Préstamo marcado como incobrable', 'success');
+            cerrarModalPago();
+            
+            // Recargar lista
+            setTimeout(() => {
+                cargarListaPrestamos();
+            }, 1000);
+            
+        } else {
+            showNotification(response.error || 'Error al marcar como incobrable', 'error');
+        }
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error de conexión', 'error');
+    }
+}
+
+function cerrarModalPago() {
+    const modal = document.getElementById('modal-pago-container');
+    if (modal) {
+        modal.remove();
+    }
+    prestamoActivo = null;
+    tablaAmortizacion = [];
+}
+
+function showLoadingModal(message) {
+    const loadingHTML = `
+        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-8 text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p class="text-gray-700 font-medium">${message}</p>
+            </div>
+        </div>
+    `;
+    
+    const existingLoading = document.getElementById('modal-loading');
+    if (existingLoading) existingLoading.remove();
+    
+    const loadingContainer = document.createElement('div');
+    loadingContainer.id = 'modal-loading';
+    loadingContainer.innerHTML = loadingHTML;
+    document.body.appendChild(loadingContainer);
+}
+
+function hideLoadingModal() {
+    const loading = document.getElementById('modal-loading');
+    if (loading) loading.remove();
+}
+
+// Actualizar la función registrarPago en prestamos.js
+window.registrarPago = function(id) {
+    mostrarModalPago(id);
+};
+
+// Exportar nuevas funciones
+window.mostrarModalPago = mostrarModalPago;
+window.cambiarTipoPago = cambiarTipoPago;
+window.calcularPagoCuotas = calcularPagoCuotas;
+window.calcularNuevaCuotaRefinanciamiento = calcularNuevaCuotaRefinanciamiento;
+window.calcularDesglosePago = calcularDesglosePago;
+window.procesarPago = procesarPago;
+window.marcarComoIncobrable = marcarComoIncobrable;
+window.cerrarModalPago = cerrarModalPago;
