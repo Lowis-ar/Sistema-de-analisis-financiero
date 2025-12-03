@@ -11,7 +11,7 @@ try {
     // 1. Conectar sin seleccionar base de datos
     $conn = new PDO("mysql:host=$host", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    
+
     // 2. Crear base de datos si no existe
     $conn->exec("CREATE DATABASE IF NOT EXISTS $dbname CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
     $conn->exec("USE $dbname");
@@ -19,7 +19,7 @@ try {
     // ---------------------------------------------------------
     // BLOQUE 0: TABLA USUARIOS 
     // ---------------------------------------------------------
-    
+
     // Crear tabla usuarios 
     $conn->exec("CREATE TABLE IF NOT EXISTS usuarios (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -31,7 +31,7 @@ try {
         fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB");
 
-    
+
     // ---------------------------------------------------------
     // BLOQUE 1: TABLAS BASE (Existentes)
     // ---------------------------------------------------------
@@ -51,7 +51,7 @@ try {
         calificacion VARCHAR(5) DEFAULT 'A',
         fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB");
-    
+
     // Crear tabla prestamos
     $conn->exec("CREATE TABLE IF NOT EXISTS prestamos (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -71,7 +71,7 @@ try {
         dias_mora INT DEFAULT 0,
         FOREIGN KEY (cliente_id) REFERENCES clientes(id)
     ) ENGINE=InnoDB");
-    
+
     // Crear tabla pagos
     $conn->exec("CREATE TABLE IF NOT EXISTS pagos (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -86,21 +86,136 @@ try {
         saldo_restante DECIMAL(15,2) NOT NULL,
         FOREIGN KEY (prestamo_id) REFERENCES prestamos(id)
     ) ENGINE=InnoDB");
-    
-    // Crear tabla activos (Bienes propios de la financiera)
-    $conn->exec("CREATE TABLE IF NOT EXISTS activos (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        institucion VARCHAR(50) NOT NULL,
-        unidad VARCHAR(50) NOT NULL,
-        tipo VARCHAR(50) NOT NULL,
-        descripcion TEXT NOT NULL,
-        valor DECIMAL(15,2) NOT NULL,
-        fecha_compra DATE NOT NULL,
-        codigo VARCHAR(100) UNIQUE NOT NULL,
-        vida_util INT NOT NULL,
-        porcentaje_depreciacion DECIMAL(5,4) NOT NULL,
-        estado VARCHAR(50) DEFAULT 'activo'
-    ) ENGINE=InnoDB");
+
+
+// ---------------------------------------------------------------------
+// 1. TABLA ACTIVOS
+// ---------------------------------------------------------------------
+$conn->exec("
+CREATE TABLE IF NOT EXISTS activos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    institucion VARCHAR(50) NOT NULL,
+    unidad VARCHAR(50) NOT NULL,
+    tipo VARCHAR(50) NOT NULL,
+    descripcion TEXT NOT NULL,
+    valor DECIMAL(15,2) NOT NULL,
+    fecha_compra DATE NOT NULL,
+    codigo VARCHAR(100) UNIQUE NOT NULL,
+    vida_util INT NOT NULL,
+    porcentaje_depreciacion DECIMAL(5,4) NOT NULL,
+    estado VARCHAR(50) DEFAULT 'activo',
+
+    -- Campos para bajas
+    fecha_baja DATE NULL,
+    motivo_baja VARCHAR(50) NULL,
+
+    -- Códigos
+    tipo_codigo VARCHAR(10) DEFAULT '0100',
+    unidad_codigo VARCHAR(10) DEFAULT '5676',
+    correlativo INT
+) ENGINE=InnoDB;
+");
+
+
+// ---------------------------------------------------------------------
+// 2. INDICES ACTIVOS
+// ---------------------------------------------------------------------
+$conn->exec("
+CREATE INDEX idx_activos_estado ON activos(estado);
+");
+
+$conn->exec("
+CREATE INDEX idx_activos_codigo ON activos(codigo);
+");
+
+
+// ---------------------------------------------------------------------
+// 3. TABLA TIPOS_ACTIVO
+// ---------------------------------------------------------------------
+$conn->exec("
+CREATE TABLE IF NOT EXISTS tipos_activo (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codigo VARCHAR(10) UNIQUE NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    porcentaje_depreciacion DECIMAL(5,4) NOT NULL,
+    vida_util INT NOT NULL,
+    descripcion TEXT
+) ENGINE=InnoDB;
+");
+
+
+// ---------------------------------------------------------------------
+// 4. INSERTAR CATALOGOS DEL LISR
+// ---------------------------------------------------------------------
+$conn->exec("
+INSERT INTO tipos_activo (codigo, nombre, porcentaje_depreciacion, vida_util, descripcion) VALUES
+('0100', 'Edificaciones', 0.05, 20, 'Edificios y construcciones'),
+('0200', 'Mobiliario y equipo', 0.10, 10, 'Muebles y equipo de oficina'),
+('0300', 'Equipo de transporte', 0.25, 4, 'Vehículos y equipo de transporte'),
+('0400', 'Maquinaria y equipo', 0.10, 10, 'Maquinaria industrial y equipo'),
+('0500', 'Equipo de cómputo', 0.30, 4, 'Computadoras, servidores, impresoras'),
+('0600', 'Herramientas', 0.30, 4, 'Herramientas manuales y eléctricas'),
+('0700', 'Instalaciones', 0.10, 10, 'Instalaciones especializadas'),
+('0800', 'Equipo médico', 0.20, 5, 'Equipo médico y de laboratorio');
+");
+
+
+// ---------------------------------------------------------------------
+// 5. TABLA BAJAS DE ACTIVOS
+// ---------------------------------------------------------------------
+$conn->exec("
+CREATE TABLE IF NOT EXISTS bajas_activos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    activo_id INT NOT NULL,
+    fecha_baja DATE NOT NULL,
+    motivo ENUM('donado', 'vendido', 'inhabilitado') NOT NULL,
+    valor_venta DECIMAL(15,2) NULL,
+    receptor VARCHAR(255) NULL,
+    observaciones TEXT,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (activo_id) REFERENCES activos(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+");
+
+
+// ---------------------------------------------------------------------
+// 6. TABLA DEPRECIACION DIARIA
+// ---------------------------------------------------------------------
+$conn->exec("
+CREATE TABLE IF NOT EXISTS depreciacion_diaria (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    activo_id INT NOT NULL,
+    fecha DATE NOT NULL,
+    depreciacion_diaria DECIMAL(15,2) NOT NULL,
+    depreciacion_acumulada DECIMAL(15,2) NOT NULL,
+    valor_libros DECIMAL(15,2) NOT NULL,
+    INDEX idx_fecha (fecha),
+    INDEX idx_activo (activo_id),
+    FOREIGN KEY (activo_id) REFERENCES activos(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+");
+
+
+// ---------------------------------------------------------------------
+// 7. TABLA PAGOS (PORQUE LA PEDISTE TAMBIÉN IGUAL)
+// ---------------------------------------------------------------------
+$conn->exec("
+CREATE TABLE IF NOT EXISTS pagos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prestamo_id INT NOT NULL,
+    cliente_nombre VARCHAR(255) NOT NULL,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    total_pagado DECIMAL(15,2) NOT NULL,
+    capital DECIMAL(15,2) NOT NULL,
+    interes DECIMAL(15,2) NOT NULL,
+    mora DECIMAL(15,2) DEFAULT 0,
+    comision DECIMAL(15,2) DEFAULT 0,
+    saldo_restante DECIMAL(15,2) NOT NULL,
+    FOREIGN KEY (prestamo_id) REFERENCES prestamos(id)
+) ENGINE=InnoDB;
+");
+
+
 
     // ---------------------------------------------------------
     // BLOQUE 2: NUEVAS TABLAS (Clientes Jurídicos y Garantías)
@@ -317,7 +432,7 @@ try {
     // ---------------------------------------------------------
     // BLOQUE 4: INSERTAR DATOS POR DEFECTO
     // ---------------------------------------------------------
-    
+
     // Verificar si la tabla tipos_garantia está vacía para insertar defaults
     $stmt = $conn->query("SELECT COUNT(*) FROM tipos_garantia");
     if ($stmt->fetchColumn() == 0) {
@@ -362,11 +477,11 @@ try {
         echo "<li>Usuario: usuario@financiera.com / admin123</li>";
         echo "</ul>";
     }
-    
+
     // ---------------------------------------------------------
     // BLOQUE 5: CREAR VISTAS ÚTILES
     // ---------------------------------------------------------
-    
+
     // Vista para alertas de avalúos vencidos o por vencer
     $conn->exec("
     CREATE OR REPLACE VIEW vista_alertas_avaluos AS
@@ -390,10 +505,10 @@ try {
     INNER JOIN clientes c ON h.cliente_id = c.id
     WHERE h.estado = 'vigente'
     ");
-    
+
     echo "<p style='color: blue;'>ℹ️ Vista de alertas de avalúos creada.</p>";
-    
-} catch(PDOException $e) {
+
+} catch (PDOException $e) {
     echo "<p style='color: red;'>❌ Error: " . $e->getMessage() . "</p>";
 }
 
