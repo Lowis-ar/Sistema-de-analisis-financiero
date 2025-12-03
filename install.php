@@ -88,10 +88,10 @@ try {
     ) ENGINE=InnoDB");
 
 
-// ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
 // 1. TABLA ACTIVOS
 // ---------------------------------------------------------------------
-$conn->exec("
+    $conn->exec("
 CREATE TABLE IF NOT EXISTS activos (
     id INT AUTO_INCREMENT PRIMARY KEY,
     institucion VARCHAR(50) NOT NULL,
@@ -117,22 +117,22 @@ CREATE TABLE IF NOT EXISTS activos (
 ");
 
 
-// ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
 // 2. INDICES ACTIVOS
 // ---------------------------------------------------------------------
-$conn->exec("
+    $conn->exec("
 CREATE INDEX idx_activos_estado ON activos(estado);
 ");
 
-$conn->exec("
+    $conn->exec("
 CREATE INDEX idx_activos_codigo ON activos(codigo);
 ");
 
 
-// ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
 // 3. TABLA TIPOS_ACTIVO
 // ---------------------------------------------------------------------
-$conn->exec("
+    $conn->exec("
 CREATE TABLE IF NOT EXISTS tipos_activo (
     id INT AUTO_INCREMENT PRIMARY KEY,
     codigo VARCHAR(10) UNIQUE NOT NULL,
@@ -144,10 +144,10 @@ CREATE TABLE IF NOT EXISTS tipos_activo (
 ");
 
 
-// ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
 // 4. INSERTAR CATALOGOS DEL LISR
 // ---------------------------------------------------------------------
-$conn->exec("
+    $conn->exec("
 INSERT INTO tipos_activo (codigo, nombre, porcentaje_depreciacion, vida_util, descripcion) VALUES
 ('0100', 'Edificaciones', 0.05, 20, 'Edificios y construcciones'),
 ('0200', 'Mobiliario y equipo', 0.10, 10, 'Muebles y equipo de oficina'),
@@ -160,10 +160,10 @@ INSERT INTO tipos_activo (codigo, nombre, porcentaje_depreciacion, vida_util, de
 ");
 
 
-// ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
 // 5. TABLA BAJAS DE ACTIVOS
 // ---------------------------------------------------------------------
-$conn->exec("
+    $conn->exec("
 CREATE TABLE IF NOT EXISTS bajas_activos (
     id INT AUTO_INCREMENT PRIMARY KEY,
     activo_id INT NOT NULL,
@@ -178,10 +178,10 @@ CREATE TABLE IF NOT EXISTS bajas_activos (
 ");
 
 
-// ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
 // 6. TABLA DEPRECIACION DIARIA
 // ---------------------------------------------------------------------
-$conn->exec("
+    $conn->exec("
 CREATE TABLE IF NOT EXISTS depreciacion_diaria (
     id INT AUTO_INCREMENT PRIMARY KEY,
     activo_id INT NOT NULL,
@@ -196,10 +196,10 @@ CREATE TABLE IF NOT EXISTS depreciacion_diaria (
 ");
 
 
-// ---------------------------------------------------------------------
+    // ---------------------------------------------------------------------
 // 7. TABLA PAGOS (PORQUE LA PEDISTE TAMBIÉN IGUAL)
 // ---------------------------------------------------------------------
-$conn->exec("
+    $conn->exec("
 CREATE TABLE IF NOT EXISTS pagos (
     id INT AUTO_INCREMENT PRIMARY KEY,
     prestamo_id INT NOT NULL,
@@ -222,6 +222,7 @@ CREATE TABLE IF NOT EXISTS pagos (
     // ---------------------------------------------------------
 
     // 2.1 Tabla Clientes Jurídicos (Extensión de tabla clientes)
+
     $conn->exec("CREATE TABLE IF NOT EXISTS clientes_juridicos (
         id INT AUTO_INCREMENT PRIMARY KEY,
         cliente_id INT NOT NULL,
@@ -298,6 +299,37 @@ CREATE TABLE IF NOT EXISTS pagos (
         observaciones TEXT DEFAULT NULL,
         FOREIGN KEY (garantia_id) REFERENCES garantias(id) ON DELETE CASCADE
     ) ENGINE=InnoDB");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS estados_financieros (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+  `cliente_id` int(11) NOT NULL,
+  `anio` int(4) NOT NULL COMMENT 'Año fiscal del reporte',
+  `periodo` varchar(50) NOT NULL COMMENT 'Ej: Anual 2024, Trimestre 1, Semestre 2',
+  `fecha_corte` date NOT NULL COMMENT 'Fecha exacta del cierre contable',
+  
+  -- BALANCE GENERAL (Rubros Principales)
+  `activo_corriente` decimal(15,2) DEFAULT 0.00,
+  `activo_no_corriente` decimal(15,2) DEFAULT 0.00,
+  `pasivo_corriente` decimal(15,2) DEFAULT 0.00,
+  `pasivo_no_corriente` decimal(15,2) DEFAULT 0.00,
+  `patrimonio` decimal(15,2) DEFAULT 0.00,
+  
+  -- ESTADO DE RESULTADOS (Rubros Principales)
+  `ventas_ingresos` decimal(15,2) DEFAULT 0.00,
+  `costo_ventas` decimal(15,2) DEFAULT 0.00,
+  `gastos_operativos` decimal(15,2) DEFAULT 0.00,
+  `otros_gastos_ingresos` decimal(15,2) DEFAULT 0.00,
+  `impuestos` decimal(15,2) DEFAULT 0.00,
+  `utilidad_neta` decimal(15,2) DEFAULT 0.00,
+  
+  -- CAMPOS DE CONTROL
+  `observaciones` text,
+  `fecha_registro` timestamp NOT NULL DEFAULT current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  KEY `cliente_id` (`cliente_id`),
+  CONSTRAINT `fk_financiero_cliente` FOREIGN KEY (`cliente_id`) REFERENCES `clientes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB");
 
     // ---------------------------------------------------------
     // BLOQUE 3: NUEVAS TABLAS PARA GARANTÍAS DE CLIENTES NATURALES
@@ -429,7 +461,7 @@ CREATE TABLE IF NOT EXISTS pagos (
         INDEX idx_tipo_garantia (tipo_garantia, garantia_id)
     ) ENGINE=InnoDB");
 
-     // Zonas Geográficas (Para dividir la cartera)
+    // Zonas Geográficas (Para dividir la cartera)
     $conn->exec("CREATE TABLE IF NOT EXISTS zonas (
         id INT AUTO_INCREMENT PRIMARY KEY,
         nombre VARCHAR(100) NOT NULL,
@@ -477,6 +509,7 @@ CREATE TABLE IF NOT EXISTS pagos (
         monto_aprobado DECIMAL(15,2) NOT NULL,
         monto_entregado DECIMAL(15,2) NOT NULL, -- Puede ser menor por comisiones iniciales
         saldo_capital DECIMAL(15,2) NOT NULL,
+        interes_pendiente DECIMAL(15,2) DEFAULT 0.00,
         saldo_mora DECIMAL(15,2) DEFAULT 0.00,
         
         -- Condiciones
@@ -569,7 +602,7 @@ CREATE TABLE IF NOT EXISTS pagos (
     // ---------------------------------------------------------
     // BLOQUE 4: INSERTAR DATOS POR DEFECTO
     // ---------------------------------------------------------
-
+    
     // Verificar si la tabla tipos_garantia está vacía para insertar defaults
     $stmt = $conn->query("SELECT COUNT(*) FROM tipos_garantia");
     if ($stmt->fetchColumn() == 0) {

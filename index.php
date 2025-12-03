@@ -233,40 +233,50 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
             </div>
 
             <nav class="flex-1 p-4 space-y-2">
-                <button onclick="setActiveTab('dashboard')" class="tab-button flex items-center w-full p-3 rounded-md bg-blue-600 hover:bg-slate-700 transition-colors">
+                <button onclick="setActiveTab('dashboard')"
+                    class="tab-button flex items-center w-full p-3 rounded-md bg-blue-600 hover:bg-slate-700 transition-colors">
                     <i class="fas fa-chart-pie w-5 h-5 mr-3"></i> Dashboard
                 </button>
                 <div class="section-divider">
-    <p class="text-xs text-slate-400 uppercase tracking-wider mb-2">Sistema</p>
-    <button onclick="setActiveTab('configuracion')" class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
-        <i class="fas fa-cogs w-5 h-5 mr-3"></i> Configuración
-    </button>
-</div>
-                <button onclick="setActiveTab('clientes')" class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                    <p class="text-xs text-slate-400 uppercase tracking-wider mb-2">Sistema</p>
+                    
+                </div>
+                <button onclick="setActiveTab('clientes')"
+                    class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-users w-5 h-5 mr-3"></i> Clientes
                 </button>
-                 <button onclick="setActiveTab('financiero')"
+                <button onclick="setActiveTab('financiero')"
                     class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-chart-line w-5 h-5 mr-3"></i> Info. Financiera
                 </button>
+                <button onclick="setActiveTab('garantias')"
+                    class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                    <i class="fas fa-shield-alt w-5 h-5 mr-3"></i> Garantías Juridicas
+                </button>
+                <button onclick="setActiveTab('configuracion')"
+                        class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                        <i class="fas fa-cogs w-5 h-5 mr-3"></i> Zona, Asesor & Política
+                    </button>
                 <button onclick="setActiveTab('creditos_corp')"
                     class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-credit-card w-5 h-5 mr-3"></i> Créditos Júridicos
                 </button>
-                <button onclick="setActiveTab('garantias')" class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
-                    <i class="fas fa-shield-alt w-5 h-5 mr-3"></i> Garantías
-                </button>
-                <button onclick="setActiveTab('creditos')" class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                
+                
+                <button onclick="setActiveTab('creditos')"
+                    class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-credit-card w-5 h-5 mr-3"></i> Créditos & Caja
                 </button>
-                <button onclick="setActiveTab('activos')" class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                <button onclick="setActiveTab('activos')"
+                    class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-building w-5 h-5 mr-3"></i> Activos Fijos
                 </button>
 
                 <?php if ($rol_usuario == 'admin'): ?>
                     <div class="mt-4 pt-4 border-t border-slate-700">
                         <p class="text-xs text-slate-400 uppercase tracking-wider mb-2">Administración</p>
-                        <button onclick="setActiveTab('usuarios')" class="tab-btn flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-all">
+                        <button onclick="setActiveTab('usuarios')"
+                            class="tab-btn flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-all">
                             <i class="fas fa-user-cog w-5 h-5 mr-3"></i> Usuarios
                         </button>
                     </div>
@@ -274,18 +284,24 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
             </nav>
 
             <div class="p-4 border-t border-slate-700">
-                <a href="login/logout.php" class="flex items-center justify-center w-full p-3 rounded-md hover:bg-red-900 bg-red-800 text-white transition-all">
+                <a href="login/logout.php"
+                    class="flex items-center justify-center w-full p-3 rounded-md hover:bg-red-900 bg-red-800 text-white transition-all">
                     <i class="fas fa-sign-out-alt w-5 h-5 mr-3"></i> Cerrar Sesión
                 </a>
             </div>
         </aside>
 
         <div class="md:hidden fixed bottom-0 left-0 right-0 bg-slate-800 text-white flex justify-around p-3 z-50">
-            <button onclick="setActiveTab('dashboard')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i class="fas fa-chart-pie"></i></button>
-            <button onclick="setActiveTab('clientes')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i class="fas fa-users"></i></button>
-            <button onclick="setActiveTab('garantias')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i class="fas fa-shield-alt"></i></button>
-            <button onclick="setActiveTab('creditos')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i class="fas fa-credit-card"></i></button>
-            <button onclick="setActiveTab('activos')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i class="fas fa-building"></i></button>
+            <button onclick="setActiveTab('dashboard')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i
+                    class="fas fa-chart-pie"></i></button>
+            <button onclick="setActiveTab('clientes')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i
+                    class="fas fa-users"></i></button>
+            <button onclick="setActiveTab('garantias')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i
+                    class="fas fa-shield-alt"></i></button>
+            <button onclick="setActiveTab('creditos')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i
+                    class="fas fa-credit-card"></i></button>
+            <button onclick="setActiveTab('activos')" class="tab-button p-3 rounded-full hover:bg-slate-700"><i
+                    class="fas fa-building"></i></button>
         </div>
 
         <main class="flex-1 overflow-y-auto p-4 md:p-8 pb-20 md:pb-8">
@@ -302,7 +318,9 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
             <h3 class="text-lg font-bold mb-4 text-gray-800" id="modal-title">Mensaje</h3>
             <p id="modal-message" class="text-gray-600 mb-6"></p>
             <div class="text-right">
-                <button onclick="document.getElementById('modal').classList.add('hidden'); document.getElementById('modal').classList.remove('flex');" class="btn btn-primary">Entendido</button>
+                <button
+                    onclick="document.getElementById('modal').classList.add('hidden'); document.getElementById('modal').classList.remove('flex');"
+                    class="btn btn-primary">Entendido</button>
             </div>
         </div>
     </div>

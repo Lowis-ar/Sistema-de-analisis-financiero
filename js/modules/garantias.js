@@ -1,5 +1,8 @@
+// js/modules/garantias.js
+
 let garantiasView = 'list';
 let editingGarantiaId = null;
+let allGarantiasData = []; // Variable para almacenar los datos crudos y poder filtrar
 
 // ==========================================
 // CARGA INICIAL Y LISTADO
@@ -13,31 +16,16 @@ async function loadGarantiasModule() {
     try {
         const response = await apiCall('garantias.php');
         
-        // --- VALIDACIÓN DE SEGURIDAD ---
-        // Manejamos si la respuesta es un error, un array o null
-        let listaGarantias = [];
-        
         if (response && response.error) {
-            // Caso A: El servidor respondió con un error explícito
-            console.error('Error del servidor:', response.error);
-            document.getElementById('main-content').innerHTML = `
-                <div class="card p-8 text-center text-red-500">
-                    <i class="fas fa-exclamation-circle text-4xl mb-2"></i>
-                    <p>Error del servidor: ${response.error}</p>
-                </div>`;
+            document.getElementById('main-content').innerHTML = `<div class="card p-8 text-center text-red-500"><p>Error: ${response.error}</p></div>`;
             return;
-        } else if (Array.isArray(response)) {
-            // Caso B: Todo bien, es una lista
-            listaGarantias = response;
-        } else {
-            // Caso C: Respuesta desconocida o vacía, asumimos lista vacía para no romper la UI
-            console.warn('Respuesta no válida para garantías (se asume vacía):', response);
-            listaGarantias = [];
         }
-        // -------------------------------
+
+        // Guardamos los datos globalmente para filtrar sin llamar a la API de nuevo
+        allGarantiasData = Array.isArray(response) ? response : [];
 
         const content = `
-            <div class="space-y-6">
+            <div class="space-y-6 animate-fade-in">
                 <div class="flex justify-between items-center">
                     <div>
                         <h2 class="text-2xl font-bold text-gray-800">Garantías Mobiliarias</h2>
@@ -48,13 +36,17 @@ async function loadGarantiasModule() {
                     </button>
                 </div>
                 
+                <!-- BARRA DE FILTROS FUNCIONAL -->
                 <div class="flex gap-2 border-b overflow-x-auto pb-1">
-                    <button class="px-4 py-2 border-b-2 border-blue-600 text-blue-600 font-bold whitespace-nowrap">Todas</button>
-                    <button class="px-4 py-2 text-gray-500 hover:text-blue-600 whitespace-nowrap">Por Vencer</button>
+                    <button onclick="filtrarGarantias('todas')" id="btn-todas" class="px-4 py-2 border-b-2 border-blue-600 text-blue-600 font-bold whitespace-nowrap transition-colors">Todas</button>
+                    <button onclick="filtrarGarantias('vencer')" id="btn-vencer" class="px-4 py-2 text-gray-500 hover:text-blue-600 border-b-2 border-transparent whitespace-nowrap transition-colors">
+                        <i class="fas fa-clock mr-1"></i> Por Vencer (Seguros)
+                    </button>
+                    <button onclick="filtrarGarantias('deteriorada')" id="btn-deteriorada" class="px-4 py-2 text-gray-500 hover:text-blue-600 border-b-2 border-transparent whitespace-nowrap transition-colors">Deterioradas</button>
                 </div>
 
                 <div id="garantiasContent">
-                    ${renderGarantiasList(listaGarantias)}
+                    ${renderGarantiasList(allGarantiasData)}
                 </div>
             </div>
         `;
@@ -63,50 +55,84 @@ async function loadGarantiasModule() {
 
     } catch (error) {
         console.error(error);
-        document.getElementById('main-content').innerHTML = `
-            <div class="card p-8 text-center text-red-500">
-                <i class="fas fa-exclamation-triangle text-4xl mb-2"></i>
-                <p>Ocurrió un error inesperado al cargar el módulo.</p>
-            </div>`;
+        document.getElementById('main-content').innerHTML = '<div class="card p-4 text-red-500">Error de conexión.</div>';
     }
 }
 
+// Función de filtrado en cliente (Rápida)
+function filtrarGarantias(filtro) {
+    // Actualizar UI de botones
+    ['todas', 'vencer', 'deteriorada'].forEach(f => {
+        const btn = document.getElementById(`btn-${f}`);
+        if (f === filtro) {
+            btn.className = "px-4 py-2 border-b-2 border-blue-600 text-blue-600 font-bold whitespace-nowrap transition-colors";
+        } else {
+            btn.className = "px-4 py-2 text-gray-500 hover:text-blue-600 border-b-2 border-transparent whitespace-nowrap transition-colors";
+        }
+    });
+
+    let filtradas = [];
+    const hoy = new Date();
+    const limiteAlerta = new Date();
+    limiteAlerta.setDate(hoy.getDate() + 30); // 30 días para vencer
+
+    if (filtro === 'todas') {
+        filtradas = allGarantiasData;
+    } else if (filtro === 'vencer') {
+        filtradas = allGarantiasData.filter(g => {
+            if (!g.fecha_vencimiento_seguro) return false; // Si no tiene seguro, no cuenta
+            const fechaVence = new Date(g.fecha_vencimiento_seguro);
+            return fechaVence <= limiteAlerta && g.estado === 'vigente';
+        });
+    } else if (filtro === 'deteriorada') {
+        filtradas = allGarantiasData.filter(g => g.estado === 'deteriorada');
+    }
+
+    // Renderizar solo el contenido
+    document.getElementById('garantiasContent').innerHTML = renderGarantiasList(filtradas);
+}
+
 function renderGarantiasList(garantias) {
-    // Doble verificación de seguridad
     if (!Array.isArray(garantias) || garantias.length === 0) {
         return `
             <div class="card">
                 <div class="text-center py-12 text-gray-500">
-                    <i class="fas fa-file-contract text-5xl text-gray-300 mb-4"></i>
-                    <h3 class="text-xl font-semibold text-gray-600">No hay garantías registradas</h3>
-                    <p class="mb-6">Registra los bienes muebles, inventarios o maquinaria de tus clientes.</p>
-                    <button onclick="showGarantiaForm()" class="btn btn-primary">
-                        <i class="fas fa-plus mr-2"></i> Registrar Primera Garantía
-                    </button>
+                    <i class="fas fa-search text-5xl text-gray-300 mb-4"></i>
+                    <h3 class="text-xl font-semibold text-gray-600">No se encontraron garantías</h3>
+                    <p class="mb-6">No hay registros con el criterio seleccionado.</p>
                 </div>
             </div>
         `;
     }
 
     const grid = garantias.map(g => {
-        // Validación de campos nulos para evitar "undefined" en pantalla
         const estado = g.estado || 'tramite';
-        const desc = g.descripcion_bien || 'Sin descripción';
-        const cliente = g.cliente_nombre || 'Cliente Desconocido';
-        const tipo = g.tipo_nombre || 'General';
-        const valCom = parseFloat(g.valor_comercial || 0);
         const valReal = parseFloat(g.valor_realizacion || 0);
+        
+        // Lógica de alerta de seguro
+        let alertaSeguro = '';
+        if (g.fecha_vencimiento_seguro) {
+            const hoy = new Date();
+            const vence = new Date(g.fecha_vencimiento_seguro);
+            const diffTime = vence - hoy;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        const estadoStyles = {
-            'tramite': 'bg-yellow-100 text-yellow-800 border-yellow-200',
-            'vigente': 'bg-green-100 text-green-800 border-green-200',
-            'deteriorada': 'bg-red-100 text-red-800 border-red-200',
-            'ejecucion': 'bg-orange-100 text-orange-800 border-orange-200',
-            'liberada': 'bg-gray-100 text-gray-800 border-gray-200'
-        };
-        const badgeClass = estadoStyles[estado] || 'bg-gray-100 text-gray-800';
+            if (diffDays < 0) {
+                alertaSeguro = `<div class="bg-red-100 text-red-800 text-xs px-2 py-1 rounded mt-2 font-bold"><i class="fas fa-exclamation-circle"></i> Seguro Vencido (${g.fecha_vencimiento_seguro})</div>`;
+            } else if (diffDays <= 30) {
+                alertaSeguro = `<div class="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded mt-2 font-bold"><i class="fas fa-clock"></i> Vence en ${diffDays} días</div>`;
+            }
+        } else {
+            alertaSeguro = `<div class="bg-gray-100 text-gray-500 text-xs px-2 py-1 rounded mt-2"><i class="fas fa-shield-alt"></i> Sin seguro registrado</div>`;
+        }
 
-        // Usamos un objeto simple en el onclick para pasar el ID
+        const badgeClass = {
+            'tramite': 'bg-yellow-100 text-yellow-800',
+            'vigente': 'bg-green-100 text-green-800',
+            'deteriorada': 'bg-red-100 text-red-800',
+            'liberada': 'bg-gray-100 text-gray-800'
+        }[estado] || 'bg-gray-100';
+
         return `
             <div class="card hover:shadow-lg transition-shadow border-t-4 border-blue-500 cursor-pointer relative group"
                  onclick="editGarantia(${g.id})"> 
@@ -118,35 +144,18 @@ function renderGarantiasList(garantias) {
                     </span>
                 </div>
 
-                <h3 class="font-bold text-gray-800 truncate" title="${desc}">
-                    ${desc}
+                <h3 class="font-bold text-gray-800 truncate" title="${g.descripcion_bien}">
+                    ${g.descripcion_bien}
                 </h3>
-                <p class="text-sm text-blue-600 mb-3 truncate">
-                    <i class="fas fa-user mr-1"></i> ${cliente}
+                <p class="text-sm text-blue-600 mb-2 truncate">
+                    <i class="fas fa-user mr-1"></i> ${g.cliente_nombre || 'Cliente Desconocido'}
                 </p>
 
-                <div class="bg-gray-50 p-2 rounded text-sm space-y-1 mb-3">
-                    <div class="flex justify-between">
-                        <span class="text-gray-500">Tipo:</span>
-                        <span class="font-medium truncate ml-2">${tipo}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-500">Valor Comercial:</span>
-                        <span class="font-bold text-gray-800">${formatCurrency(valCom)}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-500">Valor Realización:</span>
-                        <span class="font-bold text-blue-700">${formatCurrency(valReal)}</span>
-                    </div>
-                </div>
+                ${alertaSeguro}
 
-                <div class="flex justify-between items-center text-xs text-gray-500 border-t pt-2">
-                    <span title="Folio RUG"><i class="fas fa-university mr-1"></i> ${g.folio_rug || 'Sin RUG'}</span>
-                    
-                    <button onclick="event.stopPropagation(); deleteGarantia(${g.id})" 
-                            class="text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity p-1">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                <div class="border-t mt-3 pt-2 flex justify-between items-center">
+                    <span class="text-xs text-gray-500">Valor Realización</span>
+                    <span class="font-bold text-blue-700">${formatCurrency(valReal)}</span>
                 </div>
             </div>
         `;
@@ -157,7 +166,7 @@ function renderGarantiasList(garantias) {
             ${grid}
         </div>
         <div class="mt-4 text-right text-xs text-gray-500">
-            Mostrando ${garantias.length} registros
+            Registros visibles: ${garantias.length}
         </div>
     `;
 }
@@ -171,7 +180,6 @@ async function showGarantiaForm(garantia = null) {
     editingGarantiaId = garantia ? garantia.id : null;
 
     try {
-        // Cargar Catálogos necesarios (Clientes y Tipos) en paralelo
         const [clientes, tipos] = await Promise.all([
             apiCall('clientes.php'), 
             apiCall('garantias.php?modulo=tipos')
@@ -192,228 +200,139 @@ async function showGarantiaForm(garantia = null) {
         `;
         
         document.getElementById('main-content').innerHTML = content;
-        
-        // Inicializar cálculos si es nuevo
         if(!garantia) updateCalculosGarantia();
 
     } catch (error) {
         console.error(error);
-        showModal('Error', 'No se pudieron cargar los datos necesarios para el formulario.');
         loadGarantiasModule();
     }
 }
 
 function renderFormHTML(data, clientes, tipos) {
-    // Valores por defecto
     const valComercial = data ? data.valor_comercial : 0;
     const valRealizacion = data ? data.valor_realizacion : 0;
     
-    // Generar opciones de Clientes (Maneja si vienen arrays vacíos)
     const clientesOptions = Array.isArray(clientes) ? clientes.map(c => 
         `<option value="${c.id}" ${data && data.cliente_id == c.id ? 'selected' : ''}>
             ${c.codigo} - ${c.nombre || c.razon_social}
         </option>`
-    ).join('') : '<option value="">Error cargando clientes</option>';
+    ).join('') : '';
 
-    // Generar opciones de Tipos
     const tiposOptions = Array.isArray(tipos) ? tipos.map(t => 
         `<option value="${t.id}" ${data && data.tipo_garantia_id == t.id ? 'selected' : ''}>
             ${t.nombre}
         </option>`
-    ).join('') : '<option value="">Error cargando tipos</option>';
+    ).join('') : '';
 
     return `
         <div class="card">
             <form id="formGarantia" onsubmit="saveGarantia(event)">
                 <input type="hidden" id="garantiaId" value="${data ? data.id : ''}">
                 
-                <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">Datos del Bien</h4>
+                <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">1. Datos del Bien</h4>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div class="input-group">
-                        <label>Cliente Propietario *</label>
-                        <select id="cliente_id" class="w-full p-2 border rounded bg-white" required>
-                            <option value="">-- Seleccione Cliente --</option>
+                        <label>Cliente *</label>
+                        <select id="cliente_id" class="w-full p-2 border rounded" required>
+                            <option value="">-- Seleccionar --</option>
                             ${clientesOptions}
                         </select>
                     </div>
-
                     <div class="input-group">
                         <label>Tipo de Garantía *</label>
-                        <select id="tipo_garantia_id" class="w-full p-2 border rounded bg-white" required>
+                        <select id="tipo_garantia_id" class="w-full p-2 border rounded" required>
                             ${tiposOptions}
                         </select>
                     </div>
                 </div>
-
                 <div class="input-group mb-4">
-                    <label>Descripción Técnica Detallada *</label>
-                    <textarea id="descripcion_bien" class="w-full p-2 border rounded" rows="3" required 
-                        placeholder="Marca, Modelo, Serie, Color, Estado de conservación...">${data ? data.descripcion_bien : ''}</textarea>
+                    <label>Descripción</label>
+                    <textarea id="descripcion_bien" class="w-full p-2 border rounded" rows="2" required>${data ? data.descripcion_bien : ''}</textarea>
                 </div>
 
-                <div class="input-group mb-6">
-                    <label>Ubicación Física del Bien</label>
-                    <input type="text" id="ubicacion_fisica" class="w-full p-2 border rounded" 
-                        value="${data ? data.ubicacion_fisica : ''}" placeholder="Dirección exacta donde se encuentra">
-                </div>
-
-                <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">Valoración Financiera</h4>
+                <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">2. Valoración</h4>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     <div class="input-group">
-                        <label>Valor Comercial (Avalúo) $ *</label>
-                        <input type="number" id="valor_comercial" class="w-full p-2 border rounded font-bold" 
-                            value="${valComercial}" step="0.01" min="0" required 
-                            oninput="updateCalculosGarantia()">
+                        <label>Valor Comercial $</label>
+                        <input type="number" id="valor_comercial" class="w-full p-2 border rounded" 
+                            value="${valComercial}" step="0.01" required oninput="updateCalculosGarantia()">
                     </div>
-                    
                     <div class="input-group">
-                        <label>Factor de Castigo %</label>
-                        <input type="number" id="factor_castigo" class="w-full p-2 border rounded" 
-                            value="70" min="0" max="100" 
-                            oninput="updateCalculosGarantia()">
-                        <p class="text-xs text-gray-500 mt-1">Por defecto 70%</p>
-                    </div>
-
-                    <div class="input-group bg-blue-50 p-2 rounded border border-blue-200">
-                        <label class="text-blue-800 text-sm">Valor de Realización (Garantía)</label>
-                        <input type="number" id="valor_realizacion" class="w-full p-1 bg-transparent border-none font-bold text-xl text-blue-900 focus:ring-0" 
+                        <label>Realización (Automático)</label>
+                        <input type="number" id="valor_realizacion" class="w-full p-2 border rounded bg-gray-100" 
                             value="${valRealizacion}" readonly>
-                        <p class="text-xs text-blue-600">Monto máximo a cubrir</p>
                     </div>
                 </div>
 
-                <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">Registro Legal (Ley de Garantías Mobiliarias)</h4>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <h4 class="font-bold text-gray-700 border-b pb-2 mb-4">3. Seguro (Opcional)</h4>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-yellow-50 p-4 rounded border border-yellow-100">
                     <div class="input-group">
-                        <label>Folio RUG (CNR)</label>
-                        <input type="text" id="folio_rug" class="w-full p-2 border rounded" 
-                            value="${data ? (data.folio_rug || '') : ''}" placeholder="Ej: 2023-123456">
+                        <label>Aseguradora</label>
+                        <input type="text" id="aseguradora" class="w-full p-2 border rounded bg-white">
                     </div>
                     <div class="input-group">
-                        <label>Fecha Inscripción</label>
-                        <input type="date" id="fecha_inscripcion_rug" class="w-full p-2 border rounded" 
-                            value="${data ? (data.fecha_inscripcion_rug || '') : ''}">
+                        <label>No. Póliza</label>
+                        <input type="text" id="numero_poliza" class="w-full p-2 border rounded bg-white">
                     </div>
                     <div class="input-group">
-                        <label>Estado Actual</label>
-                        <select id="estado" class="w-full p-2 border rounded">
-                            <option value="tramite" ${data && data.estado === 'tramite' ? 'selected' : ''}>En Trámite</option>
-                            <option value="vigente" ${data && data.estado === 'vigente' ? 'selected' : ''}>Vigente</option>
-                            <option value="deteriorada" ${data && data.estado === 'deteriorada' ? 'selected' : ''}>Deteriorada</option>
-                            <option value="ejecucion" ${data && data.estado === 'ejecucion' ? 'selected' : ''}>En Ejecución</option>
-                            <option value="liberada" ${data && data.estado === 'liberada' ? 'selected' : ''}>Liberada</option>
-                        </select>
+                        <label>Vencimiento</label>
+                        <input type="date" id="fecha_vencimiento_seguro" class="w-full p-2 border rounded bg-white">
                     </div>
                 </div>
 
                 <div class="flex gap-4 pt-4 border-t">
-                    <button type="submit" class="btn btn-success flex-1">
-                        <i class="fas fa-save mr-2"></i> Guardar Garantía
-                    </button>
-                    <button type="button" onclick="loadGarantiasModule()" class="btn btn-secondary flex-1">
-                        <i class="fas fa-times mr-2"></i> Cancelar
-                    </button>
+                    <button type="submit" class="btn btn-success flex-1">Guardar</button>
+                    <button type="button" onclick="loadGarantiasModule()" class="btn btn-secondary flex-1">Cancelar</button>
                 </div>
             </form>
         </div>
     `;
 }
 
-// ==========================================
-// LÓGICA DE NEGOCIO Y GUARDADO
-// ==========================================
-
 function updateCalculosGarantia() {
     const comercial = parseFloat(document.getElementById('valor_comercial').value) || 0;
-    const factor = parseFloat(document.getElementById('factor_castigo').value) || 70;
-    
-    // Cálculo: Valor * (Porcentaje / 100)
-    const realizacion = comercial * (factor / 100);
-    
+    // Regla de negocio: Castigo del 30% (Valor * 0.70)
+    const realizacion = comercial * 0.70;
     document.getElementById('valor_realizacion').value = realizacion.toFixed(2);
 }
 
 async function editGarantia(id) {
-    showLoading();
-    // Simulación de búsqueda por ID (Idealmente el backend tendría endpoint getById)
-    try {
-        const todas = await apiCall('garantias.php');
-        
-        // Si la respuesta es un array, buscamos. Si es error, manejamos.
-        if (Array.isArray(todas)) {
-            const garantia = todas.find(g => g.id == id);
-            
-            if (garantia) {
-                showGarantiaForm(garantia);
-            } else {
-                showModal('Error', 'No se encontró la garantía especificada.');
-                loadGarantiasModule();
-            }
-        } else {
-            showModal('Error', 'No se pudieron cargar las garantías para editar.');
-            loadGarantiasModule();
-        }
-    } catch (e) {
-        console.error(e);
-        loadGarantiasModule();
-    }
+    // Simulación: Buscamos en la lista local para editar rápido
+    const garantia = allGarantiasData.find(g => g.id == id);
+    if (garantia) showGarantiaForm(garantia);
 }
 
 async function saveGarantia(event) {
     event.preventDefault();
-
-    const id = document.getElementById('garantiaId').value;
     
     const payload = {
         cliente_id: document.getElementById('cliente_id').value,
         tipo_garantia_id: document.getElementById('tipo_garantia_id').value,
         descripcion_bien: document.getElementById('descripcion_bien').value,
-        ubicacion_fisica: document.getElementById('ubicacion_fisica').value,
         valor_comercial: document.getElementById('valor_comercial').value,
         valor_realizacion: document.getElementById('valor_realizacion').value,
-        folio_rug: document.getElementById('folio_rug').value,
-        fecha_inscripcion_rug: document.getElementById('fecha_inscripcion_rug').value,
-        estado: document.getElementById('estado').value
+        // Datos Seguro
+        aseguradora: document.getElementById('aseguradora').value,
+        numero_poliza: document.getElementById('numero_poliza').value,
+        fecha_vencimiento_seguro: document.getElementById('fecha_vencimiento_seguro').value
     };
 
-    // Validación básica de formulario
-    if (payload.valor_comercial <= 0) {
-        showModal('Error', 'El valor comercial debe ser mayor a 0');
-        return;
-    }
-
-    // Feedback visual en botón
     const btn = event.target.querySelector('button[type="submit"]');
-    const originalText = btn.innerHTML;
     btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
 
     try {
-        let endpoint = 'garantias.php';
-        // Nota: Asumimos POST para crear. Si tu backend soporta PUT para editar, 
-        // deberías cambiar el método aquí si 'id' existe.
-        
-        const result = await apiCall(endpoint, 'POST', payload);
-
-        if (result && (result.success || result.id)) {
-            showModal('Éxito', 'Garantía guardada correctamente.');
+        const result = await apiCall('garantias.php', 'POST', payload);
+        if (result && result.success) {
+            showModal('Éxito', 'Garantía guardada.');
             loadGarantiasModule();
         } else {
-            showModal('Error', result?.error || 'No se pudo guardar la garantía.');
+            showModal('Error', result?.error || 'Error al guardar.');
         }
-
-    } catch (error) {
-        console.error(error);
-        showModal('Error', 'Error de conexión.');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalText;
-    }
+    } catch (error) { console.error(error); } 
+    finally { btn.disabled = false; }
 }
 
 async function deleteGarantia(id) {
-    if (!confirm('¿Estás seguro de eliminar esta garantía? Si está vinculada a un crédito activo, esto podría causar errores.')) {
-        return;
-    }
-    alert('Funcionalidad de eliminar pendiente de implementación en backend.');
+    if (!confirm('¿Eliminar garantía?')) return;
+    alert('Pendiente de implementación en backend.');
 }
