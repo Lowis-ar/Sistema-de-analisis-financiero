@@ -19,7 +19,6 @@ try {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
-// El parámetro 'modulo' decide qué tabla secundaria vamos a tocar
 $modulo = $_GET['modulo'] ?? 'general'; 
 
 switch ($method) {
@@ -48,11 +47,17 @@ switch ($method) {
 
 function getGarantias($pdo) {
     try {
-        // MEJORA SQL: Usamos LEFT JOIN para traer el nombre correcto
-        // Si es empresa (clientes_juridicos), usamos razon_social. Si es natural, usamos nombre.
+        // AGREGADO: Subconsulta para obtener la fecha de vencimiento del seguro
+        // Esto es lo que permite al frontend filtrar "Por Vencer"
         $sql = "SELECT g.*, 
                        tg.nombre as tipo_nombre, 
-                       COALESCE(cj.razon_social, c.nombre) as cliente_nombre 
+                       COALESCE(cj.razon_social, c.nombre) as cliente_nombre,
+                       (
+                           SELECT fecha_vencimiento 
+                           FROM garantias_seguros gs 
+                           WHERE gs.garantia_id = g.id AND gs.estado = 'vigente' 
+                           ORDER BY gs.fecha_vencimiento ASC LIMIT 1
+                       ) as fecha_vencimiento_seguro
                 FROM garantias g
                 LEFT JOIN tipos_garantia tg ON g.tipo_garantia_id = tg.id
                 LEFT JOIN clientes c ON g.cliente_id = c.id
@@ -62,7 +67,6 @@ function getGarantias($pdo) {
         $stmt = $pdo->query($sql);
         $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
         
-        // Devolver array vacío en lugar de null si no hay datos
         echo json_encode($result ?: []);
         
     } catch(PDOException $e) {
@@ -90,18 +94,17 @@ function createGarantia($pdo) {
         return;
     }
 
-    // Regla de Negocio: Valor de Realización (Castigo)
-    // Si no se envía, calculamos el 70% del valor comercial (común en bancos)
     $val_com = floatval($data['valor_comercial']);
     $val_real = !empty($data['valor_realizacion']) ? floatval($data['valor_realizacion']) : ($val_com * 0.70);
 
-    // Generar Código Interno (GAR-0001)
     $stmt = $pdo->query("SELECT COUNT(*) as total FROM garantias");
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     $correlativo = $row['total'] + 1;
     $codigo = 'GAR-' . str_pad($correlativo, 5, '0', STR_PAD_LEFT);
 
     try {
+        $pdo->beginTransaction();
+
         $sql = "INSERT INTO garantias (
                     cliente_id, tipo_garantia_id, codigo_interno, descripcion_bien, 
                     ubicacion_fisica, valor_comercial, valor_realizacion, 
@@ -125,21 +128,41 @@ function createGarantia($pdo) {
             ':frug' => !empty($data['fecha_inscripcion_rug']) ? $data['fecha_inscripcion_rug'] : null,
             ':est' => $data['estado'] ?? 'tramite'
         ]);
+        
+        $garantiaId = $pdo->lastInsertId();
+
+        // AGREGADO: Guardar Seguro si viene en el formulario
+        if (!empty($data['numero_poliza'])) {
+            $sqlSeg = "INSERT INTO garantias_seguros (garantia_id, aseguradora, numero_poliza, fecha_inicio, fecha_vencimiento, monto_asegurado, estado) 
+                       VALUES (?, ?, ?, CURDATE(), ?, ?, 'vigente')";
+            $stmtSeg = $pdo->prepare($sqlSeg);
+            $stmtSeg->execute([
+                $garantiaId, 
+                $data['aseguradora'] ?? '', 
+                $data['numero_poliza'], 
+                $data['fecha_vencimiento_seguro'], // Este campo viene del JS
+                $val_com // Asumimos cobertura por el valor comercial
+            ]);
+        }
+
+        $pdo->commit();
 
         echo json_encode([
             'success' => true, 
-            'id' => $pdo->lastInsertId(), 
+            'id' => $garantiaId, 
             'codigo' => $codigo, 
             'message' => 'Garantía registrada correctamente'
         ]);
+
     } catch(PDOException $e) {
+        $pdo->rollBack();
         http_response_code(500);
         echo json_encode(['error' => 'Error al guardar: ' . $e->getMessage()]);
     }
 }
 
 // ---------------------------------------------------------
-// 2. FUNCIONES DE SEGUROS (Alertas de Pólizas)
+// 2. FUNCIONES DE SEGUROS
 // ---------------------------------------------------------
 
 function getSeguros($pdo) {
@@ -155,9 +178,7 @@ function getSeguros($pdo) {
 
 function createSeguro($pdo) {
     $data = json_decode(file_get_contents('php://input'), true);
-    
     if (empty($data['garantia_id']) || empty($data['numero_poliza'])) {
-        http_response_code(400);
         echo json_encode(['error' => 'Faltan datos de la póliza']); 
         return;
     }
@@ -176,13 +197,12 @@ function createSeguro($pdo) {
         ]);
         echo json_encode(['success' => true, 'message' => 'Seguro registrado']);
     } catch(PDOException $e) {
-        http_response_code(500);
         echo json_encode(['error' => $e->getMessage()]);
     }
 }
 
 // ---------------------------------------------------------
-// 3. FUNCIONES DE AVALÚOS (Actualización de Valor)
+// 3. FUNCIONES DE AVALÚOS
 // ---------------------------------------------------------
 
 function getAvaluos($pdo) {
@@ -198,7 +218,6 @@ function getAvaluos($pdo) {
 
 function createAvaluo($pdo) {
     $data = json_decode(file_get_contents('php://input'), true);
-    
     if (empty($data['garantia_id']) || empty($data['valor_asignado'])) {
         http_response_code(400);
         echo json_encode(['error' => 'Datos de avalúo incompletos']);
@@ -208,7 +227,6 @@ function createAvaluo($pdo) {
     try {
         $pdo->beginTransaction();
         
-        // 1. Registrar el avalúo histórico
         $sql = "INSERT INTO garantias_avaluos (garantia_id, perito_nombre, fecha_avaluo, valor_asignado, observaciones)
                 VALUES (:gid, :perito, :fecha, :valor, :obs)";
         $stmt = $pdo->prepare($sql);
@@ -220,10 +238,8 @@ function createAvaluo($pdo) {
             ':obs' => $data['observaciones'] ?? ''
         ]);
         
-        // 2. ACTUALIZAR AUTOMÁTICAMENTE el valor de la garantía principal
-        // Si el avalúo cambia, el valor del activo en libros cambia.
         $nuevo_valor = $data['valor_asignado'];
-        $nuevo_castigo = $nuevo_valor * 0.70; // Mantener regla del 70%
+        $nuevo_castigo = $nuevo_valor * 0.70;
         
         $upd = $pdo->prepare("UPDATE garantias SET valor_comercial = ?, valor_realizacion = ? WHERE id = ?");
         $upd->execute([$nuevo_valor, $nuevo_castigo, $data['garantia_id']]);

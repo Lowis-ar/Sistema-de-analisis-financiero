@@ -21,13 +21,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     elseif ($action === 'list') listarCartera($pdo);
     elseif ($action === 'simular') simularCuotas($pdo);
     elseif ($action === 'detalle_plan') verPlanPagos($pdo);
+    elseif ($action === 'datos_pago') obtenerDatosPago($pdo);
 } 
 elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create') crearCredito($pdo);
-    elseif ($action === 'refinanciar') refinanciarCredito($pdo); // Ahora sí existe la función
+    elseif ($action === 'refinanciar') refinanciarCredito($pdo);
+    elseif ($action === 'registrar_pago') registrarPago($pdo);
 }
 
-// --- FUNCIONES PÚBLICAS ---
+// --- FUNCIONES DE LECTURA ---
 
 function obtenerParametros($pdo) {
     try {
@@ -63,54 +65,165 @@ function verPlanPagos($pdo) {
     echo json_encode($stmt->fetchAll(PDO::FETCH_ASSOC));
 }
 
+// --- FUNCIONES DE PAGO (REDONDEO APLICADO) ---
+
+function obtenerDatosPago($pdo) {
+    $id = $_GET['id'];
+    $credito = $pdo->query("SELECT * FROM creditos_corporativos WHERE id = $id")->fetch(PDO::FETCH_ASSOC);
+    
+    // Calcular interés al día
+    $fechaUltimo = new DateTime($credito['fecha_ultimo_pago'] ?? $credito['fecha_desembolso']);
+    $fechaHoy = new DateTime();
+    
+    if ($fechaHoy < $fechaUltimo) $fechaHoy = $fechaUltimo;
+
+    $dias = $fechaUltimo->diff($fechaHoy)->days;
+    
+    // Cálculo con precisión
+    $interesDiario = ($credito['saldo_capital'] * ($credito['tasa_interes_aplicada'] / 100)) / 360;
+    
+    // Redondeo final para mostrar al usuario
+    $interesGenerado = round($interesDiario * $dias, 2);
+    $interesPendiente = floatval($credito['interes_pendiente']);
+    $totalInteres = round($interesGenerado + $interesPendiente, 2);
+    
+    $stmt = $pdo->prepare("SELECT * FROM plan_pagos_corp WHERE credito_id = ? AND estado != 'pagado' ORDER BY numero_cuota ASC LIMIT 1");
+    $stmt->execute([$id]);
+    $cuota = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    echo json_encode([
+        'credito' => $credito,
+        'calculos' => [
+            'dias_transcurridos' => $dias,
+            'interes_diario' => $interesDiario, // Se puede enviar con más decimales para JS si se quiere precisión visual
+            'interes_generado_hoy' => $interesGenerado,
+            'interes_acumulado_anterior' => round($interesPendiente, 2),
+            'total_interes_pendiente' => $totalInteres
+        ],
+        'proxima_cuota_plan' => $cuota
+    ]);
+}
+
+function registrarPago($pdo) {
+    $data = json_decode(file_get_contents('php://input'), true);
+    
+    try {
+        $pdo->beginTransaction();
+
+        $creditoId = $data['credito_id'];
+        $montoPago = round(floatval($data['monto_pagado']), 2); // Redondear entrada
+        $fechaPago = $data['fecha_pago'];
+
+        // Validar Crédito
+        $sqlC = "SELECT * FROM creditos_corporativos WHERE id = ?";
+        $stmtC = $pdo->prepare($sqlC);
+        $stmtC->execute([$creditoId]);
+        $credito = $stmtC->fetch(PDO::FETCH_ASSOC);
+
+        // Recalcular Interés
+        $fechaUltimo = new DateTime($credito['fecha_ultimo_pago'] ?? $credito['fecha_desembolso']);
+        $fechaActual = new DateTime($fechaPago);
+        
+        $dias = $fechaUltimo->diff($fechaActual)->days;
+        if ($fechaActual < $fechaUltimo) {
+            throw new Exception("La fecha de pago no puede ser anterior al último movimiento.");
+        }
+
+        // Cálculo Interés Exacto
+        $tasaDiaria = ($credito['tasa_interes_aplicada'] / 100) / 360;
+        $interesGenerado = round(($credito['saldo_capital'] * $tasaDiaria) * $dias, 2); // Redondear
+        
+        $interesPendienteAnterior = round(floatval($credito['interes_pendiente']), 2);
+        $totalInteres = round($interesGenerado + $interesPendienteAnterior, 2); // Redondear suma
+
+        // Distribución
+        $abonoInteres = min($montoPago, $totalInteres);
+        $abonoInteres = round($abonoInteres, 2); // Asegurar 2 decimales
+        
+        $remanente = round($montoPago - $abonoInteres, 2);
+        $abonoCapital = $remanente;
+        
+        $nuevoSaldo = round($credito['saldo_capital'] - $abonoCapital, 2);
+        $nuevoInteresPendiente = round($totalInteres - $abonoInteres, 2);
+
+        // Actualizar Crédito
+        $updCred = $pdo->prepare("UPDATE creditos_corporativos SET saldo_capital = ?, interes_pendiente = ?, fecha_ultimo_pago = ? WHERE id = ?");
+        $updCred->execute([$nuevoSaldo, $nuevoInteresPendiente, $fechaPago, $creditoId]);
+
+        // Registrar Recibo
+        $codRecibo = 'REC-' . time();
+        $insRec = $pdo->prepare("INSERT INTO recibos_corp (credito_id, codigo_recibo, monto_total_pagado, abono_interes, abono_capital, fecha_transaccion, usuario_cajero) VALUES (?, ?, ?, ?, ?, ?, 'Sistema')");
+        $insRec->execute([$creditoId, $codRecibo, $montoPago, $abonoInteres, $abonoCapital, $fechaPago]);
+
+        // Actualizar Plan (Visual)
+        $sqlPlan = "SELECT * FROM plan_pagos_corp WHERE credito_id = ? AND estado != 'pagado' ORDER BY numero_cuota ASC LIMIT 1";
+        $stmtPlan = $pdo->prepare($sqlPlan);
+        $stmtPlan->execute([$creditoId]);
+        $cuota = $stmtPlan->fetch(PDO::FETCH_ASSOC);
+
+        if ($cuota) {
+            // Si se abonó capital significativo, marcamos como pagado o parcial
+            $estado = ($abonoCapital >= ($cuota['capital_programado'] * 0.9)) ? 'pagado' : 'parcial';
+            $updPlan = $pdo->prepare("UPDATE plan_pagos_corp SET estado = ?, fecha_pago_real = ?, monto_pagado_real = monto_pagado_real + ? WHERE id = ?");
+            $updPlan->execute([$estado, $fechaPago, $montoPago, $cuota['id']]);
+        }
+        
+        if ($nuevoSaldo <= 0.01) { // Margen de error mínimo para liquidar
+             $pdo->query("UPDATE creditos_corporativos SET estado = 'finalizado', saldo_capital = 0 WHERE id = $creditoId");
+        }
+
+        $pdo->commit();
+        echo json_encode(['success' => true, 'message' => 'Pago aplicado', 'recibo' => $codRecibo]);
+
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['error' => $e->getMessage()]);
+    }
+}
+
+// --- CREACIÓN DE CRÉDITO ---
+
 function simularCuotas($pdo) {
-    $monto = $_GET['monto'];
-    $tasa = $_GET['tasa'];
-    $plazo = $_GET['plazo'];
-    $comision = $_GET['comision'] ?? 0;
+    $monto = floatval($_GET['monto']);
+    $tasa = floatval($_GET['tasa']);
+    $plazo = intval($_GET['plazo']);
+    $comision = floatval($_GET['comision'] ?? 0);
     
     $plan = calcularAmortizacion($monto, $tasa, $plazo, $comision);
     echo json_encode($plan);
 }
 
-// Función para Crear Crédito Nuevo
 function crearCredito($pdo) {
     $data = json_decode(file_get_contents('php://input'), true);
-    // Llamamos a la lógica central
     _procesarCredito($pdo, $data);
 }
 
-// Función para Refinanciar (La que faltaba)
 function refinanciarCredito($pdo) {
     $data = json_decode(file_get_contents('php://input'), true);
-    
-    // Validación extra para refinanciamiento
     if (empty($data['refinancia_id'])) {
-        echo json_encode(['error' => 'Para refinanciar se requiere el ID del crédito anterior']);
-        return;
+        echo json_encode(['error' => 'Falta ID anterior']); return;
     }
-    
-    // Llamamos a la misma lógica central
     _procesarCredito($pdo, $data);
 }
 
-// --- LÓGICA CENTRAL (PRIVADA) ---
-// Unifica la lógica de guardar para evitar duplicar código
 function _procesarCredito($pdo, $data) {
     if (empty($data['cliente_id']) || empty($data['monto'])) {
-        echo json_encode(['error' => 'Faltan datos obligatorios']); return;
+        echo json_encode(['error' => 'Datos incompletos']); return;
     }
 
     try {
         $pdo->beginTransaction();
 
-        // 1. Generar Contrato
+        $fechaDesembolso = date('Y-m-d');
         $anio = date('Y');
-        $stmtCount = $pdo->query("SELECT COUNT(*) FROM creditos_corporativos");
-        $corr = $stmtCount->fetchColumn() + 1;
+        
+        $stmtC = $pdo->query("SELECT COUNT(*) FROM creditos_corporativos");
+        $corr = $stmtC->fetchColumn() + 1;
         $codigo = "CORP-$anio-" . str_pad($corr, 4, '0', STR_PAD_LEFT);
 
-        // 2. Insertar Encabezado
+        // Asegurar montos redondeados al inicio
+        $montoAprobado = round(floatval($data['monto']), 2);
+
         $sql = "INSERT INTO creditos_corporativos (
             codigo_contrato, cliente_id, politica_id, asesor_id, zona_id,
             monto_solicitado, monto_aprobado, monto_entregado, saldo_capital,
@@ -118,11 +231,11 @@ function _procesarCredito($pdo, $data) {
             dia_pago, fecha_desembolso, estado, credito_anterior_id
         ) VALUES (
             :cod, :cli, :pol, :ase, :zon,
-            :monto, :monto, :monto_neto, :monto,
+            :monto, :monto, :monto, :monto,
             :plazo, :tasa, :mora, 
-            :dia, CURDATE(), 'activo', :anterior
+            :dia, :fecha, 'activo', :ant
         )";
-
+        
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
             ':cod' => $codigo,
@@ -130,95 +243,92 @@ function _procesarCredito($pdo, $data) {
             ':pol' => $data['politica_id'],
             ':ase' => $data['asesor_id'],
             ':zon' => $data['zona_id'],
-            ':monto' => $data['monto'],
-            ':monto_neto' => $data['monto'], // Aquí podrías restar comisiones si aplica
+            ':monto' => $montoAprobado,
             ':plazo' => $data['plazo'],
             ':tasa' => $data['tasa'],
             ':mora' => $data['tasa_mora'],
             ':dia' => $data['dia_pago'],
-            ':anterior' => $data['refinancia_id'] ?? null
+            ':fecha' => $fechaDesembolso,
+            ':ant' => $data['refinancia_id'] ?? null
         ]);
         $creditoId = $pdo->lastInsertId();
 
-        // 3. Si es Refinanciamiento: Cancelar crédito anterior
         if (!empty($data['refinancia_id'])) {
-            // Actualizamos estado y ponemos saldo a 0 (se asume pagado con el nuevo)
-            $upd = $pdo->prepare("UPDATE creditos_corporativos SET estado = 'refinanciado', saldo_capital = 0 WHERE id = ?");
-            $upd->execute([$data['refinancia_id']]);
+            $pdo->prepare("UPDATE creditos_corporativos SET estado = 'refinanciado', saldo_capital = 0 WHERE id = ?")->execute([$data['refinancia_id']]);
         }
 
-        // 4. Vincular Garantías
         if (!empty($data['garantias'])) {
-            $sqlGar = "INSERT INTO creditos_garantias_vinculo (credito_id, origen_tabla, referencia_id, valor_cobertura, descripcion_corta) 
-                       VALUES (?, ?, ?, ?, ?)";
-            $stmtGar = $pdo->prepare($sqlGar);
+            $sqlG = "INSERT INTO creditos_garantias_vinculo (credito_id, origen_tabla, referencia_id, valor_cobertura, descripcion_corta) VALUES (?, ?, ?, ?, ?)";
+            $stmtG = $pdo->prepare($sqlG);
             foreach ($data['garantias'] as $g) {
-                // Definir tipo de tabla origen
-                $tablaOrigen = ($g['tipo'] == 'hipoteca') ? 'hipoteca' : 'garantia_bien';
-                $stmtGar->execute([$creditoId, $tablaOrigen, $g['id'], $g['valor'], $g['desc']]);
+                $origen = ($g['tipo'] == 'hipoteca') ? 'hipoteca' : 'garantia_bien';
+                $stmtG->execute([$creditoId, $origen, $g['id'], round($g['valor'], 2), $g['desc']]);
             }
         }
 
-        // 5. Generar Plan de Pagos
-        $comisionPct = $data['comision_admin'] ?? 0;
-        $plan = calcularAmortizacion($data['monto'], $data['tasa'], $data['plazo'], $comisionPct);
+        $comisionPct = floatval($data['comision_admin'] ?? 0);
+        $plan = calcularAmortizacion($montoAprobado, floatval($data['tasa']), intval($data['plazo']), $comisionPct);
         
-        $sqlPlan = "INSERT INTO plan_pagos_corp (
-            credito_id, numero_cuota, fecha_vencimiento, 
-            capital_programado, interes_programado, comision_programada, cuota_total, saldo_proyectado
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        $sqlPlan = "INSERT INTO plan_pagos_corp (credito_id, numero_cuota, fecha_vencimiento, capital_programado, interes_programado, comision_programada, cuota_total, saldo_proyectado) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         $stmtPlan = $pdo->prepare($sqlPlan);
 
-        $fechaPago = new DateTime();
+        $fechaBase = new DateTime($fechaDesembolso);
         $diaCorte = (int)$data['dia_pago'];
 
         foreach ($plan as $c) {
-            $fechaPago->modify('+1 month');
-            // Ajuste de día de pago (si el mes no tiene ese día, usa el último)
-            $diaSafe = min($diaCorte, (int)$fechaPago->format('t'));
-            $fechaPago->setDate((int)$fechaPago->format('Y'), (int)$fechaPago->format('m'), $diaSafe);
+            $fechaBase->modify('+1 month');
+            $anioActual = $fechaBase->format('Y');
+            $mesActual = $fechaBase->format('m');
+            $diasEnMes = cal_days_in_month(CAL_GREGORIAN, $mesActual, $anioActual);
+            $diaReal = min($diaCorte, $diasEnMes);
+            $fechaBase->setDate($anioActual, $mesActual, $diaReal);
 
             $stmtPlan->execute([
-                $creditoId, $c['numero'], $fechaPago->format('Y-m-d'),
+                $creditoId, $c['numero'], $fechaBase->format('Y-m-d'),
                 $c['capital'], $c['interes'], $c['comision'], $c['cuota'], $c['saldo']
             ]);
         }
 
         $pdo->commit();
-        echo json_encode(['success' => true, 'message' => 'Crédito Corporativo procesado correctamente', 'codigo' => $codigo]);
+        echo json_encode(['success' => true, 'message' => 'Crédito creado', 'codigo' => $codigo]);
 
     } catch (Exception $e) {
         $pdo->rollBack();
-        echo json_encode(['error' => 'Error procesando crédito: ' . $e->getMessage()]);
+        echo json_encode(['error' => $e->getMessage()]);
     }
 }
 
-// --- MATEMÁTICA FINANCIERA ---
+// --- MATEMÁTICA (CON REDONDEO 2 DECIMALES) ---
 function calcularAmortizacion($monto, $tasaAnual, $plazo, $comisionPct = 0) {
     $saldo = $monto;
     $tasaMensual = ($tasaAnual / 100) / 12;
-    $comisionMensual = ($monto * ($comisionPct / 100));
+    $comisionFija = round($monto * ($comisionPct / 100), 2); // Redondear comisión
     
-    if ($tasaAnual == 0) {
-        $cuotaBase = $monto / $plazo;
-    } else {
-        $cuotaBase = ($monto * $tasaMensual) / (1 - pow(1 + $tasaMensual, -$plazo));
-    }
+    if ($tasaAnual == 0) $cuotaBase = $monto / $plazo;
+    else $cuotaBase = ($monto * $tasaMensual) / (1 - pow(1 + $tasaMensual, -$plazo));
     
     $plan = [];
     for ($i = 1; $i <= $plazo; $i++) {
-        $interes = $saldo * $tasaMensual;
-        $capital = $cuotaBase - $interes;
+        $interes = round($saldo * $tasaMensual, 2); // Redondear interés
+        $capital = round($cuotaBase - $interes, 2); // Redondear capital
         $saldo -= $capital;
+        $saldo = round($saldo, 2); // Redondear saldo
+
         if ($saldo < 0) $saldo = 0;
+        if ($i == $plazo && $saldo > 0) { // Ajuste final en última cuota
+            $capital += $saldo;
+            $saldo = 0;
+        }
+        
+        $cuotaTotal = round($capital + $interes + $comisionFija, 2);
 
         $plan[] = [
             'numero' => $i,
-            'cuota' => round($cuotaBase + $comisionMensual, 2),
-            'interes' => round($interes, 2),
-            'capital' => round($capital, 2),
-            'comision' => round($comisionMensual, 2),
-            'saldo' => round($saldo, 2)
+            'cuota' => $cuotaTotal,
+            'interes' => $interes,
+            'capital' => $capital,
+            'comision' => $comisionFija,
+            'saldo' => $saldo
         ];
     }
     return $plan;

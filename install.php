@@ -11,7 +11,7 @@ try {
     // 1. Conectar sin seleccionar base de datos
     $conn = new PDO("mysql:host=$host", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    
+
     // 2. Crear base de datos si no existe
     $conn->exec("CREATE DATABASE IF NOT EXISTS $dbname CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci");
     $conn->exec("USE $dbname");
@@ -19,7 +19,7 @@ try {
     // ---------------------------------------------------------
     // BLOQUE 0: TABLA USUARIOS 
     // ---------------------------------------------------------
-    
+
     // Crear tabla usuarios 
     $conn->exec("CREATE TABLE IF NOT EXISTS usuarios (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -31,7 +31,7 @@ try {
         fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB");
 
-    
+
     // ---------------------------------------------------------
     // BLOQUE 1: TABLAS BASE (Existentes)
     // ---------------------------------------------------------
@@ -51,7 +51,7 @@ try {
         calificacion VARCHAR(5) DEFAULT 'A',
         fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB");
-    
+
     // Crear tabla prestamos
     $conn->exec("CREATE TABLE IF NOT EXISTS prestamos (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -72,32 +72,6 @@ try {
         FOREIGN KEY (cliente_id) REFERENCES clientes(id)
     ) ENGINE=InnoDB");
 
-    $conn->exec("CREATE TABLE amortizacion_frances (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    prestamo_id INT NOT NULL,
-    numero_cuota INT NOT NULL,
-    fecha_vencimiento DATE NOT NULL,
-    capital_cuota DECIMAL(15,2) NOT NULL,
-    interes_cuota DECIMAL(15,2) NOT NULL,
-    cuota_total DECIMAL(15,2) NOT NULL,
-    saldo_despues DECIMAL(15,2) NOT NULL,
-    estado ENUM('pendiente', 'pagada', 'vencida') DEFAULT 'pendiente',
-    fecha_pago DATE NULL,
-    mora_generada DECIMAL(15,2) DEFAULT 0,
-    FOREIGN KEY (prestamo_id) REFERENCES prestamos(id) ON DELETE CASCADE,
-    UNIQUE KEY uk_prestamo_cuota (prestamo_id, numero_cuota),
-    INDEX idx_fecha_vencimiento (fecha_vencimiento),
-    INDEX idx_estado (estado)
-   ) ENGINE=InnoDB");
-
-
-    $conn->exec("CREATE TABLE config_cobros (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    parametro VARCHAR(50) UNIQUE NOT NULL,
-    valor VARCHAR(100) NOT NULL,
-    descripcion TEXT
-    ) ENGINE=InnoDB");
-
     // Crear tabla pagos
     $conn->exec("CREATE TABLE IF NOT EXISTS pagos (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -112,27 +86,143 @@ try {
         saldo_restante DECIMAL(15,2) NOT NULL,
         FOREIGN KEY (prestamo_id) REFERENCES prestamos(id)
     ) ENGINE=InnoDB");
-    
-    // Crear tabla activos (Bienes propios de la financiera)
-    $conn->exec("CREATE TABLE IF NOT EXISTS activos (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        institucion VARCHAR(50) NOT NULL,
-        unidad VARCHAR(50) NOT NULL,
-        tipo VARCHAR(50) NOT NULL,
-        descripcion TEXT NOT NULL,
-        valor DECIMAL(15,2) NOT NULL,
-        fecha_compra DATE NOT NULL,
-        codigo VARCHAR(100) UNIQUE NOT NULL,
-        vida_util INT NOT NULL,
-        porcentaje_depreciacion DECIMAL(5,4) NOT NULL,
-        estado VARCHAR(50) DEFAULT 'activo'
-    ) ENGINE=InnoDB");
+
+
+    // ---------------------------------------------------------------------
+// 1. TABLA ACTIVOS
+// ---------------------------------------------------------------------
+    $conn->exec("
+CREATE TABLE IF NOT EXISTS activos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    institucion VARCHAR(50) NOT NULL,
+    unidad VARCHAR(50) NOT NULL,
+    tipo VARCHAR(50) NOT NULL,
+    descripcion TEXT NOT NULL,
+    valor DECIMAL(15,2) NOT NULL,
+    fecha_compra DATE NOT NULL,
+    codigo VARCHAR(100) UNIQUE NOT NULL,
+    vida_util INT NOT NULL,
+    porcentaje_depreciacion DECIMAL(5,4) NOT NULL,
+    estado VARCHAR(50) DEFAULT 'activo',
+
+    -- Campos para bajas
+    fecha_baja DATE NULL,
+    motivo_baja VARCHAR(50) NULL,
+
+    -- Códigos
+    tipo_codigo VARCHAR(10) DEFAULT '0100',
+    unidad_codigo VARCHAR(10) DEFAULT '5676',
+    correlativo INT
+) ENGINE=InnoDB;
+");
+
+
+    // ---------------------------------------------------------------------
+// 2. INDICES ACTIVOS
+// ---------------------------------------------------------------------
+    $conn->exec("
+CREATE INDEX idx_activos_estado ON activos(estado);
+");
+
+    $conn->exec("
+CREATE INDEX idx_activos_codigo ON activos(codigo);
+");
+
+
+    // ---------------------------------------------------------------------
+// 3. TABLA TIPOS_ACTIVO
+// ---------------------------------------------------------------------
+    $conn->exec("
+CREATE TABLE IF NOT EXISTS tipos_activo (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codigo VARCHAR(10) UNIQUE NOT NULL,
+    nombre VARCHAR(100) NOT NULL,
+    porcentaje_depreciacion DECIMAL(5,4) NOT NULL,
+    vida_util INT NOT NULL,
+    descripcion TEXT
+) ENGINE=InnoDB;
+");
+
+
+    // ---------------------------------------------------------------------
+// 4. INSERTAR CATALOGOS DEL LISR
+// ---------------------------------------------------------------------
+    $conn->exec("
+INSERT INTO tipos_activo (codigo, nombre, porcentaje_depreciacion, vida_util, descripcion) VALUES
+('0100', 'Edificaciones', 0.05, 20, 'Edificios y construcciones'),
+('0200', 'Mobiliario y equipo', 0.10, 10, 'Muebles y equipo de oficina'),
+('0300', 'Equipo de transporte', 0.25, 4, 'Vehículos y equipo de transporte'),
+('0400', 'Maquinaria y equipo', 0.10, 10, 'Maquinaria industrial y equipo'),
+('0500', 'Equipo de cómputo', 0.30, 4, 'Computadoras, servidores, impresoras'),
+('0600', 'Herramientas', 0.30, 4, 'Herramientas manuales y eléctricas'),
+('0700', 'Instalaciones', 0.10, 10, 'Instalaciones especializadas'),
+('0800', 'Equipo médico', 0.20, 5, 'Equipo médico y de laboratorio');
+");
+
+
+    // ---------------------------------------------------------------------
+// 5. TABLA BAJAS DE ACTIVOS
+// ---------------------------------------------------------------------
+    $conn->exec("
+CREATE TABLE IF NOT EXISTS bajas_activos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    activo_id INT NOT NULL,
+    fecha_baja DATE NOT NULL,
+    motivo ENUM('donado', 'vendido', 'inhabilitado') NOT NULL,
+    valor_venta DECIMAL(15,2) NULL,
+    receptor VARCHAR(255) NULL,
+    observaciones TEXT,
+    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (activo_id) REFERENCES activos(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+");
+
+
+    // ---------------------------------------------------------------------
+// 6. TABLA DEPRECIACION DIARIA
+// ---------------------------------------------------------------------
+    $conn->exec("
+CREATE TABLE IF NOT EXISTS depreciacion_diaria (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    activo_id INT NOT NULL,
+    fecha DATE NOT NULL,
+    depreciacion_diaria DECIMAL(15,2) NOT NULL,
+    depreciacion_acumulada DECIMAL(15,2) NOT NULL,
+    valor_libros DECIMAL(15,2) NOT NULL,
+    INDEX idx_fecha (fecha),
+    INDEX idx_activo (activo_id),
+    FOREIGN KEY (activo_id) REFERENCES activos(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+");
+
+
+    // ---------------------------------------------------------------------
+// 7. TABLA PAGOS (PORQUE LA PEDISTE TAMBIÉN IGUAL)
+// ---------------------------------------------------------------------
+    $conn->exec("
+CREATE TABLE IF NOT EXISTS pagos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prestamo_id INT NOT NULL,
+    cliente_nombre VARCHAR(255) NOT NULL,
+    fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    total_pagado DECIMAL(15,2) NOT NULL,
+    capital DECIMAL(15,2) NOT NULL,
+    interes DECIMAL(15,2) NOT NULL,
+    mora DECIMAL(15,2) DEFAULT 0,
+    comision DECIMAL(15,2) DEFAULT 0,
+    saldo_restante DECIMAL(15,2) NOT NULL,
+    FOREIGN KEY (prestamo_id) REFERENCES prestamos(id)
+) ENGINE=InnoDB;
+");
+
+
 
     // ---------------------------------------------------------
     // BLOQUE 2: NUEVAS TABLAS (Clientes Jurídicos y Garantías)
     // ---------------------------------------------------------
 
     // 2.1 Tabla Clientes Jurídicos (Extensión de tabla clientes)
+
     $conn->exec("CREATE TABLE IF NOT EXISTS clientes_juridicos (
         id INT AUTO_INCREMENT PRIMARY KEY,
         cliente_id INT NOT NULL,
@@ -209,6 +299,37 @@ try {
         observaciones TEXT DEFAULT NULL,
         FOREIGN KEY (garantia_id) REFERENCES garantias(id) ON DELETE CASCADE
     ) ENGINE=InnoDB");
+
+    $conn->exec("CREATE TABLE IF NOT EXISTS estados_financieros (
+        `id` int(11) NOT NULL AUTO_INCREMENT,
+  `cliente_id` int(11) NOT NULL,
+  `anio` int(4) NOT NULL COMMENT 'Año fiscal del reporte',
+  `periodo` varchar(50) NOT NULL COMMENT 'Ej: Anual 2024, Trimestre 1, Semestre 2',
+  `fecha_corte` date NOT NULL COMMENT 'Fecha exacta del cierre contable',
+  
+  -- BALANCE GENERAL (Rubros Principales)
+  `activo_corriente` decimal(15,2) DEFAULT 0.00,
+  `activo_no_corriente` decimal(15,2) DEFAULT 0.00,
+  `pasivo_corriente` decimal(15,2) DEFAULT 0.00,
+  `pasivo_no_corriente` decimal(15,2) DEFAULT 0.00,
+  `patrimonio` decimal(15,2) DEFAULT 0.00,
+  
+  -- ESTADO DE RESULTADOS (Rubros Principales)
+  `ventas_ingresos` decimal(15,2) DEFAULT 0.00,
+  `costo_ventas` decimal(15,2) DEFAULT 0.00,
+  `gastos_operativos` decimal(15,2) DEFAULT 0.00,
+  `otros_gastos_ingresos` decimal(15,2) DEFAULT 0.00,
+  `impuestos` decimal(15,2) DEFAULT 0.00,
+  `utilidad_neta` decimal(15,2) DEFAULT 0.00,
+  
+  -- CAMPOS DE CONTROL
+  `observaciones` text,
+  `fecha_registro` timestamp NOT NULL DEFAULT current_timestamp(),
+  
+  PRIMARY KEY (`id`),
+  KEY `cliente_id` (`cliente_id`),
+  CONSTRAINT `fk_financiero_cliente` FOREIGN KEY (`cliente_id`) REFERENCES `clientes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB");
 
     // ---------------------------------------------------------
     // BLOQUE 3: NUEVAS TABLAS PARA GARANTÍAS DE CLIENTES NATURALES
@@ -340,7 +461,7 @@ try {
         INDEX idx_tipo_garantia (tipo_garantia, garantia_id)
     ) ENGINE=InnoDB");
 
-     // Zonas Geográficas (Para dividir la cartera)
+    // Zonas Geográficas (Para dividir la cartera)
     $conn->exec("CREATE TABLE IF NOT EXISTS zonas (
         id INT AUTO_INCREMENT PRIMARY KEY,
         nombre VARCHAR(100) NOT NULL,
@@ -388,6 +509,7 @@ try {
         monto_aprobado DECIMAL(15,2) NOT NULL,
         monto_entregado DECIMAL(15,2) NOT NULL, -- Puede ser menor por comisiones iniciales
         saldo_capital DECIMAL(15,2) NOT NULL,
+        interes_pendiente DECIMAL(15,2) DEFAULT 0.00,
         saldo_mora DECIMAL(15,2) DEFAULT 0.00,
         
         -- Condiciones
@@ -452,8 +574,6 @@ try {
         FOREIGN KEY (credito_id) REFERENCES creditos_corporativos(id) ON DELETE CASCADE
     ) ENGINE=InnoDB");
 
-    
-
     // 5. RECIBOS DE COBRO (CAJA)
     // -----------------------------------------------------
     $conn->exec("CREATE TABLE IF NOT EXISTS recibos_corp (
@@ -479,10 +599,6 @@ try {
         FOREIGN KEY (credito_id) REFERENCES creditos_corporativos(id)
     ) ENGINE=InnoDB");
 
-    
-
-    
-
     // ---------------------------------------------------------
     // BLOQUE 4: INSERTAR DATOS POR DEFECTO
     // ---------------------------------------------------------
@@ -500,8 +616,6 @@ try {
         echo "<p style='color: blue;'>ℹ️ Catálogo de Tipos de Garantía Jurídica inicializado.</p>";
     }
 
-
-
     // Insertar datos por defecto para tipos de garantías personales
     $stmt = $conn->query("SELECT COUNT(*) FROM tipos_garantia_personal");
     if ($stmt->fetchColumn() == 0) {
@@ -517,20 +631,6 @@ try {
     echo "<p style='color: green;'>✅ Base de datos, tablas base y módulos de garantías (naturales y jurídicas) creados exitosamente!</p>";
     echo "<p>Ahora puedes acceder al sistema en <a href='index.php'>index.php</a></p>";
 
- $stmt = $conn->query("SELECT COUNT(*) FROM config_cobros");
-    if ($stmt->fetchColumn() == 0) {
-        $sql = " INSERT INTO config_cobros (parametro, valor, descripcion) VALUES 
-    ('tasa_mora_diaria', '0.0006575', '24% anual / 365 días (0.06575% diario)'),
-    ('dias_gracia', '5', 'Días de gracia antes de aplicar mora'),
-    ('metodo_amortizacion', 'frances', 'Método francés para personas naturales'),
-    ('redondeo', '2', 'Decimales para redondeo')";
-        $conn->exec($sql);
-        echo "<p style='color: blue;'>ℹ️ Catálogo de Tipos de Garantía Personal inicializado.</p>";
-    }
-
-    
-   
-    
 
     // Verificar si la tabla usuarios está vacía para insertar usuario admin por defecto
     $stmt = $conn->query("SELECT COUNT(*) FROM usuarios");
@@ -547,14 +647,11 @@ try {
         echo "<li>Usuario: usuario@financiera.com / admin123</li>";
         echo "</ul>";
     }
-    
 
-
-    
     // ---------------------------------------------------------
     // BLOQUE 5: CREAR VISTAS ÚTILES
     // ---------------------------------------------------------
-    
+
     // Vista para alertas de avalúos vencidos o por vencer
     $conn->exec("
     CREATE OR REPLACE VIEW vista_alertas_avaluos AS
@@ -578,12 +675,10 @@ try {
     INNER JOIN clientes c ON h.cliente_id = c.id
     WHERE h.estado = 'vigente'
     ");
-    
+
     echo "<p style='color: blue;'>ℹ️ Vista de alertas de avalúos creada.</p>";
 
-    
-    
-} catch(PDOException $e) {
+} catch (PDOException $e) {
     echo "<p style='color: red;'>❌ Error: " . $e->getMessage() . "</p>";
 }
 

@@ -1,6 +1,10 @@
 // js/modules/configuracion.js
 
 let activeConfigTab = 'zonas';
+// Variables para control de datos y correlativos
+let zonasData = [];
+let asesoresData = [];
+let politicasData = []; // Nueva variable para almacenar políticas
 
 async function loadConfiguracionModule() {
     showLoading();
@@ -50,9 +54,19 @@ async function loadTabContent(tab) {
         const data = await apiCall(`configuracion.php?action=${tab}`);
         const container = document.getElementById('configWorkspace');
         
-        if (tab === 'zonas') renderZonas(data, container);
-        else if (tab === 'asesores') renderAsesores(data, container);
-        else if (tab === 'politicas') renderPoliticas(data, container);
+        // Guardamos los datos en variables globales para poder editarlos fácilmente
+        if (tab === 'zonas') {
+            zonasData = Array.isArray(data) ? data : []; 
+            renderZonas(zonasData, container);
+        }
+        else if (tab === 'asesores') {
+            asesoresData = Array.isArray(data) ? data : [];
+            renderAsesores(asesoresData, container);
+        }
+        else if (tab === 'politicas') {
+            politicasData = Array.isArray(data) ? data : []; // Guardamos políticas
+            renderPoliticas(politicasData, container);
+        }
         
     } catch(e) { console.error(e); }
 }
@@ -83,13 +97,22 @@ function renderZonas(data, container) {
             </table>
         </div>
         
-        <!-- Modal Zona (Hidden by default logic, injected here for simplicity or use global modal) -->
         <div id="formZone" class="hidden mt-4 p-4 bg-gray-50 rounded border">
+            <h4 class="text-sm font-bold mb-2 text-blue-800" id="zoneTitle">Nueva Zona</h4>
             <form onsubmit="saveZona(event)" class="flex gap-2 items-end">
                 <input type="hidden" id="z_id">
-                <div class="flex-1"><label class="text-xs">Nombre</label><input id="z_nombre" class="w-full p-1 border rounded" required></div>
-                <div class="w-24"><label class="text-xs">Código</label><input id="z_codigo" class="w-full p-1 border rounded" required></div>
-                <div class="flex-1"><label class="text-xs">Responsable</label><input id="z_responsable" class="w-full p-1 border rounded"></div>
+                <div class="flex-1">
+                    <label class="text-xs text-gray-600">Nombre Zona *</label>
+                    <input id="z_nombre" class="w-full p-1 border rounded" placeholder="Ej: Zona Central" required>
+                </div>
+                <div class="w-32">
+                    <label class="text-xs text-gray-600">Código (Auto)</label>
+                    <input id="z_codigo" class="w-full p-1 border rounded bg-gray-100 font-mono font-bold" readonly>
+                </div>
+                <div class="flex-1">
+                    <label class="text-xs text-gray-600">Responsable</label>
+                    <input id="z_responsable" class="w-full p-1 border rounded" placeholder="Nombre del Gerente">
+                </div>
                 <button type="submit" class="btn btn-success py-1">Guardar</button>
                 <button type="button" onclick="document.getElementById('formZone').classList.add('hidden')" class="btn btn-secondary py-1">X</button>
             </form>
@@ -121,14 +144,25 @@ function renderAsesores(data, container) {
             </table>
         </div>
         
-        <!-- Formulario Inline Simple -->
         <div id="formAsesor" class="hidden mt-4 p-4 bg-blue-50 rounded border border-blue-200">
-            <h4 class="text-sm font-bold mb-2">Registrar Asesor</h4>
+            <h4 class="text-sm font-bold mb-2 text-blue-800">Registrar Nuevo Asesor</h4>
             <form onsubmit="saveAsesor(event)" class="grid grid-cols-4 gap-2">
-                <input id="a_nombre" placeholder="Nombre Completo" class="p-2 border rounded" required>
-                <input id="a_codigo" placeholder="Código (ASE-001)" class="p-2 border rounded" required>
-                <input id="a_telefono" placeholder="Teléfono" class="p-2 border rounded">
-                <select id="a_zona" class="p-2 border rounded" required><option>Cargando zonas...</option></select>
+                <div>
+                    <label class="text-xs text-gray-600">Nombre Completo *</label>
+                    <input id="a_nombre" class="w-full p-2 border rounded" required>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-600">Código (Auto)</label>
+                    <input id="a_codigo" class="w-full p-2 border rounded bg-gray-100 font-mono font-bold" readonly required>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-600">Teléfono</label>
+                    <input id="a_telefono" class="w-full p-2 border rounded" placeholder="2222-2222">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-600">Zona Asignada *</label>
+                    <select id="a_zona" class="w-full p-2 border rounded" required><option value="">Cargando...</option></select>
+                </div>
                 <div class="col-span-4 text-right mt-2">
                     <button type="button" onclick="document.getElementById('formAsesor').classList.add('hidden')" class="btn btn-secondary text-sm">Cancelar</button>
                     <button type="submit" class="btn btn-success text-sm">Guardar Asesor</button>
@@ -147,6 +181,8 @@ function renderPoliticas(data, container) {
             <td class="p-3 text-center">${p.plazo_maximo_meses} m</td>
             <td class="p-3 text-center">${p.comision_admin}%</td>
             <td class="p-3 text-right">
+                <!-- BOTÓN EDITAR AGREGADO AQUÍ -->
+                <button onclick="editPolitica(${p.id})" class="text-blue-600 hover:text-blue-800 mr-2"><i class="fas fa-edit"></i></button>
                 <button onclick="deleteItem('delete_politica', ${p.id})" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>
             </td>
         </tr>`).join('');
@@ -174,13 +210,31 @@ function renderPoliticas(data, container) {
 
         <!-- Formulario Politica -->
         <div id="formPolitica" class="hidden mt-4 p-4 bg-green-50 rounded border border-green-200">
-            <h4 class="text-sm font-bold mb-2">Nueva Política de Crédito</h4>
+            <h4 class="text-sm font-bold mb-2 text-green-800" id="politicaTitle">Nueva Política de Crédito</h4>
             <form onsubmit="savePolitica(event)" class="grid grid-cols-2 md:grid-cols-6 gap-2">
-                <div class="md:col-span-2"><input id="p_nombre" placeholder="Nombre (Ej: Hipotecario)" class="w-full p-2 border rounded" required></div>
-                <div><input type="number" id="p_tasa" placeholder="Tasa %" class="w-full p-2 border rounded" step="0.01" required></div>
-                <div><input type="number" id="p_mora" placeholder="Mora %" class="w-full p-2 border rounded" step="0.01" required></div>
-                <div><input type="number" id="p_plazo" placeholder="Plazo (m)" class="w-full p-2 border rounded" required></div>
-                <div><input type="number" id="p_comision" placeholder="Comis. %" class="w-full p-2 border rounded" step="0.01" value="0"></div>
+                <!-- CAMPO OCULTO ID AGREGADO -->
+                <input type="hidden" id="p_id"> 
+                
+                <div class="md:col-span-2">
+                    <label class="text-xs text-gray-600">Nombre *</label>
+                    <input id="p_nombre" placeholder="Ej: Hipotecario" class="w-full p-2 border rounded" required>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-600">Tasa % *</label>
+                    <input type="number" id="p_tasa" placeholder="%" class="w-full p-2 border rounded" step="0.01" min="0" required>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-600">Mora % *</label>
+                    <input type="number" id="p_mora" placeholder="%" class="w-full p-2 border rounded" step="0.01" min="0" required>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-600">Plazo (m) *</label>
+                    <input type="number" id="p_plazo" placeholder="Meses" class="w-full p-2 border rounded" required>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-600">Comis. %</label>
+                    <input type="number" id="p_comision" placeholder="%" class="w-full p-2 border rounded" step="0.01" min="0" value="0">
+                </div>
                 <div class="md:col-span-6 text-right mt-2">
                     <button type="button" onclick="document.getElementById('formPolitica').classList.add('hidden')" class="btn btn-secondary text-sm">Cancelar</button>
                     <button type="submit" class="btn btn-success text-sm">Guardar Política</button>
@@ -194,16 +248,27 @@ function renderPoliticas(data, container) {
 
 function openModalZona() {
     document.getElementById('formZone').classList.remove('hidden');
+    document.getElementById('zoneTitle').textContent = 'Nueva Zona';
     document.getElementById('z_id').value = '';
     document.getElementById('z_nombre').value = '';
-    document.getElementById('z_codigo').value = '';
+    document.getElementById('z_responsable').value = '';
+    
+    // Generar Código Automático
+    const nextId = zonasData.length + 1;
+    const autoCode = `ZON-${String(nextId).padStart(3, '0')}`;
+    
+    const inputCodigo = document.getElementById('z_codigo');
+    inputCodigo.value = autoCode;
+    inputCodigo.readOnly = true; 
 }
 
 function editZona(id, nom, cod, resp) {
     document.getElementById('formZone').classList.remove('hidden');
+    document.getElementById('zoneTitle').textContent = 'Editar Zona';
     document.getElementById('z_id').value = id;
     document.getElementById('z_nombre').value = nom;
     document.getElementById('z_codigo').value = cod;
+    document.getElementById('z_codigo').readOnly = true; 
     document.getElementById('z_responsable').value = resp;
 }
 
@@ -222,6 +287,17 @@ async function saveZona(e) {
 async function openModalAsesor() {
     const form = document.getElementById('formAsesor');
     form.classList.remove('hidden');
+    
+    document.getElementById('a_nombre').value = '';
+    document.getElementById('a_telefono').value = '';
+    
+    // Generar Código Automático
+    const nextId = asesoresData.length + 1;
+    const autoCode = `ASE-${String(nextId).padStart(3, '0')}`;
+    
+    const inputCodigo = document.getElementById('a_codigo');
+    inputCodigo.value = autoCode;
+    inputCodigo.readOnly = true; 
     
     // Cargar zonas para el select
     const zonas = await apiCall('configuracion.php?action=zonas');
@@ -243,11 +319,38 @@ async function saveAsesor(e) {
 
 function openModalPolitica() {
     document.getElementById('formPolitica').classList.remove('hidden');
+    document.getElementById('politicaTitle').textContent = 'Nueva Política de Crédito';
+    document.getElementById('p_id').value = ''; // Limpiar ID
+    document.getElementById('p_nombre').value = '';
+    document.getElementById('p_tasa').value = '';
+    document.getElementById('p_mora').value = '';
+    document.getElementById('p_plazo').value = '';
+    document.getElementById('p_comision').value = '0';
+}
+
+// NUEVA FUNCIÓN PARA EDITAR POLÍTICA
+function editPolitica(id) {
+    // Buscar la política en los datos cargados globalmente
+    const politica = politicasData.find(p => p.id == id);
+    
+    if (politica) {
+        document.getElementById('formPolitica').classList.remove('hidden');
+        document.getElementById('politicaTitle').textContent = 'Editar Política de Crédito';
+        
+        // Llenar campos
+        document.getElementById('p_id').value = politica.id;
+        document.getElementById('p_nombre').value = politica.nombre;
+        document.getElementById('p_tasa').value = politica.tasa_interes_anual;
+        document.getElementById('p_mora').value = politica.tasa_mora_anual;
+        document.getElementById('p_plazo').value = politica.plazo_maximo_meses;
+        document.getElementById('p_comision').value = politica.comision_admin;
+    }
 }
 
 async function savePolitica(e) {
     e.preventDefault();
     const payload = {
+        id: document.getElementById('p_id').value, // Enviar ID si existe
         nombre: document.getElementById('p_nombre').value,
         tasa: document.getElementById('p_tasa').value,
         mora: document.getElementById('p_mora').value,
@@ -272,7 +375,6 @@ async function deleteItem(action, id) {
     try {
         const res = await apiCall(`configuracion.php?action=${action}&id=${id}`, 'DELETE');
         if(res.success) {
-            // Recargar la pestaña activa
             loadTabContent(activeConfigTab);
         } else {
             showModal('Error', res.error);
