@@ -259,14 +259,24 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
                     </button>
                 <button onclick="setActiveTab('creditos_corp')"
                     class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
-                    <i class="fas fa-credit-card w-5 h-5 mr-3"></i> Créditos Júridicos
+                    <i class="fas fa-credit-card w-5 h-5 mr-3"></i> Créditos Jurídicos
                 </button>
                 
                 
                 <button onclick="setActiveTab('creditos')"
                     class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
-                    <i class="fas fa-credit-card w-5 h-5 mr-3"></i> Créditos & Caja
+                    <i class="fas fa-credit-card w-5 h-5 mr-3"></i> Créditos Naturales
                 </button>
+
+                         <!-- AQUÍ AGREGA EL NUEVO BOTÓN PARA COBROS NATURALES -->
+                     <button onclick="loadCobrosNaturalesModule()"
+                      class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                     <i class="fas fa-hand-holding-usd w-5 h-5 mr-3 text-green-400"></i> Cobros Naturales
+                     <span class="ml-auto text-xs bg-green-900 text-green-100 px-2 py-1 rounded-full">
+                         
+                     </span>
+                </button>
+                
                 <button onclick="setActiveTab('activos')"
                     class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-building w-5 h-5 mr-3"></i> Activos Fijos
