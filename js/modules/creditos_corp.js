@@ -150,18 +150,63 @@ async function verPlanPagos(creditoId) {
     container.innerHTML = '<div class="text-center py-12"><i class="fas fa-spinner fa-spin text-4xl text-blue-500"></i></div>';
 
     try {
-        const plan = await apiCall(`creditos_corp.php?action=detalle_plan&id=${creditoId}`);
+       const plan = await apiCall(`creditos_corp.php?action=detalle_plan&id=${creditoId}`);
         if (!plan || plan.length === 0) { container.innerHTML = '<div class="text-center py-10">Sin plan de pagos.</div>'; return; }
 
-        let html = `<table class="w-full text-sm text-left border-collapse"><thead class="bg-blue-50 text-blue-800 sticky top-0"><tr><th class="p-3">#</th><th class="p-3">Vencimiento</th><th class="p-3 text-right">Capital</th><th class="p-3 text-right">Interés</th><th class="p-3 text-right">Cuota</th><th class="p-3 text-right">Saldo</th><th class="p-3 text-center">Estado</th></tr></thead><tbody>`;
-        
-        plan.forEach(c => {
-            let cl = c.estado === 'pagado' ? 'bg-green-100 text-green-800' : (c.estado === 'vencido' ? 'bg-red-100 text-red-800' : 'bg-gray-100');
-            html += `<tr class="hover:bg-gray-50"><td class="p-3 text-center">${c.numero_cuota}</td><td class="p-3">${c.fecha_vencimiento}</td><td class="p-3 text-right">${formatCurrency(c.capital_programado)}</td><td class="p-3 text-right">${formatCurrency(c.interes_programado)}</td><td class="p-3 text-right font-bold">${formatCurrency(c.cuota_total)}</td><td class="p-3 text-right text-gray-500">${formatCurrency(c.saldo_proyectado)}</td><td class="p-3 text-center"><span class="px-2 py-1 rounded text-xs ${cl}">${c.estado}</span></td></tr>`;
+        // Renderizar tabla de amortización
+        let html = `
+            <table class="w-full text-sm text-left border-collapse">
+                <thead class="bg-blue-50 text-blue-800 sticky top-0 shadow-sm">
+                    <tr>
+                        <th class="p-3 text-center">#</th>
+                        <th class="p-3 text-center">Vencimiento</th>
+                        <th class="p-3 text-right">Capital</th>
+                        <th class="p-3 text-right">Interés</th>
+                        <th class="p-3 text-right">Comisión</th>
+                        <th class="p-3 text-right font-bold">Cuota Total</th>
+                        <th class="p-3 text-right text-gray-500">Saldo</th>
+                        <th class="p-3 text-center">Estado</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+        `;
+
+        plan.forEach(cuota => {
+            // Estilos según estado de la cuota
+            let estadoClass = 'bg-gray-100 text-gray-600';
+            if(cuota.estado === 'pagado') estadoClass = 'bg-green-100 text-green-700';
+            if(cuota.estado === 'vencido') estadoClass = 'bg-red-100 text-red-700 font-bold';
+            
+            // Verificar fecha de hoy para marcar próximas vencidas
+            const hoy = new Date().toISOString().split('T')[0];
+            const esProximo = cuota.estado === 'pendiente' && cuota.fecha_vencimiento < hoy;
+            if(esProximo) estadoClass = 'bg-orange-50 text-orange-600 border border-orange-200';
+
+            html += `
+                <tr class="hover:bg-blue-50 transition-colors">
+                    <td class="p-3 text-center font-mono">${cuota.numero_cuota}</td>
+                    <td class="p-3 text-center">${cuota.fecha_vencimiento}</td>
+                    <td class="p-3 text-right">${formatCurrency(cuota.capital_programado)}</td>
+                    <td class="p-3 text-right">${formatCurrency(cuota.interes_programado)}</td>
+                    <td class="p-3 text-right text-xs text-gray-500">${formatCurrency(cuota.comision_programada || 0)}</td>
+                    <td class="p-3 text-right font-bold text-blue-900">${formatCurrency(cuota.cuota_total)}</td>
+                    <td class="p-3 text-right text-gray-500 italic">${formatCurrency(cuota.saldo_proyectado)}</td>
+                    <td class="p-3 text-center">
+                        <span class="px-2 py-1 rounded text-xs uppercase ${estadoClass}">
+                            ${esProximo ? 'VENCIDO' : cuota.estado}
+                        </span>
+                    </td>
+                </tr>
+            `;
         });
+
         html += `</tbody></table>`;
         container.innerHTML = html;
-    } catch (e) { container.innerHTML = '<p class="text-red-500 text-center">Error.</p>'; }
+
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<p class="text-red-500 text-center py-10">Error de conexión al cargar el plan.</p>';
+    }
 }
 
 function cerrarPlanPagos() {
