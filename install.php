@@ -71,7 +71,33 @@ try {
         dias_mora INT DEFAULT 0,
         FOREIGN KEY (cliente_id) REFERENCES clientes(id)
     ) ENGINE=InnoDB");
-    
+
+    $conn->exec("CREATE TABLE amortizacion_frances (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    prestamo_id INT NOT NULL,
+    numero_cuota INT NOT NULL,
+    fecha_vencimiento DATE NOT NULL,
+    capital_cuota DECIMAL(15,2) NOT NULL,
+    interes_cuota DECIMAL(15,2) NOT NULL,
+    cuota_total DECIMAL(15,2) NOT NULL,
+    saldo_despues DECIMAL(15,2) NOT NULL,
+    estado ENUM('pendiente', 'pagada', 'vencida') DEFAULT 'pendiente',
+    fecha_pago DATE NULL,
+    mora_generada DECIMAL(15,2) DEFAULT 0,
+    FOREIGN KEY (prestamo_id) REFERENCES prestamos(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_prestamo_cuota (prestamo_id, numero_cuota),
+    INDEX idx_fecha_vencimiento (fecha_vencimiento),
+    INDEX idx_estado (estado)
+   ) ENGINE=InnoDB");
+
+
+    $conn->exec("CREATE TABLE config_cobros (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    parametro VARCHAR(50) UNIQUE NOT NULL,
+    valor VARCHAR(100) NOT NULL,
+    descripcion TEXT
+    ) ENGINE=InnoDB");
+
     // Crear tabla pagos
     $conn->exec("CREATE TABLE IF NOT EXISTS pagos (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -426,6 +452,8 @@ try {
         FOREIGN KEY (credito_id) REFERENCES creditos_corporativos(id) ON DELETE CASCADE
     ) ENGINE=InnoDB");
 
+    
+
     // 5. RECIBOS DE COBRO (CAJA)
     // -----------------------------------------------------
     $conn->exec("CREATE TABLE IF NOT EXISTS recibos_corp (
@@ -451,6 +479,10 @@ try {
         FOREIGN KEY (credito_id) REFERENCES creditos_corporativos(id)
     ) ENGINE=InnoDB");
 
+    
+
+    
+
     // ---------------------------------------------------------
     // BLOQUE 4: INSERTAR DATOS POR DEFECTO
     // ---------------------------------------------------------
@@ -468,6 +500,8 @@ try {
         echo "<p style='color: blue;'>ℹ️ Catálogo de Tipos de Garantía Jurídica inicializado.</p>";
     }
 
+
+
     // Insertar datos por defecto para tipos de garantías personales
     $stmt = $conn->query("SELECT COUNT(*) FROM tipos_garantia_personal");
     if ($stmt->fetchColumn() == 0) {
@@ -483,6 +517,20 @@ try {
     echo "<p style='color: green;'>✅ Base de datos, tablas base y módulos de garantías (naturales y jurídicas) creados exitosamente!</p>";
     echo "<p>Ahora puedes acceder al sistema en <a href='index.php'>index.php</a></p>";
 
+ $stmt = $conn->query("SELECT COUNT(*) FROM config_cobros");
+    if ($stmt->fetchColumn() == 0) {
+        $sql = " INSERT INTO config_cobros (parametro, valor, descripcion) VALUES 
+    ('tasa_mora_diaria', '0.0006575', '24% anual / 365 días (0.06575% diario)'),
+    ('dias_gracia', '5', 'Días de gracia antes de aplicar mora'),
+    ('metodo_amortizacion', 'frances', 'Método francés para personas naturales'),
+    ('redondeo', '2', 'Decimales para redondeo')";
+        $conn->exec($sql);
+        echo "<p style='color: blue;'>ℹ️ Catálogo de Tipos de Garantía Personal inicializado.</p>";
+    }
+
+    
+   
+    
 
     // Verificar si la tabla usuarios está vacía para insertar usuario admin por defecto
     $stmt = $conn->query("SELECT COUNT(*) FROM usuarios");
@@ -499,6 +547,9 @@ try {
         echo "<li>Usuario: usuario@financiera.com / admin123</li>";
         echo "</ul>";
     }
+    
+
+
     
     // ---------------------------------------------------------
     // BLOQUE 5: CREAR VISTAS ÚTILES
@@ -529,6 +580,8 @@ try {
     ");
     
     echo "<p style='color: blue;'>ℹ️ Vista de alertas de avalúos creada.</p>";
+
+    
     
 } catch(PDOException $e) {
     echo "<p style='color: red;'>❌ Error: " . $e->getMessage() . "</p>";
