@@ -217,7 +217,7 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
 
 <body class="bg-gray-100 font-sans">
     <div class="flex h-screen">
-        <aside class="w-64 bg-slate-800 text-white hidden md:flex flex-col">
+        <aside class="w-70 bg-slate-800 text-white hidden md:flex flex-col">
             <div class="p-6 border-b border-slate-700">
                 <h1 class="text-xl font-bold">FINANCIERA SV</h1>
                 <p class="text-xs text-slate-400 mt-1">Sistema Integral</p>
@@ -225,21 +225,16 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
                 <div class="user-info fade-in">
                     <h3>Conectado como:</h3>
                     <p class="font-medium text-white"><?php echo $nombre_usuario; ?></p>
-                    <p class="text-xs truncate"><?php echo $email_usuario; ?></p>
-                    <div class="user-role <?php echo $rol_usuario; ?>">
-                        <?php echo ucfirst($rol_usuario); ?>
-                    </div>
                 </div>
             </div>
 
-            <nav class="flex-1 p-4 space-y-2">
+            <nav class="flex-1 p-4 space-y-2 overflow-y-auto">
                 <button onclick="setActiveTab('dashboard')"
                     class="tab-button flex items-center w-full p-3 rounded-md bg-blue-600 hover:bg-slate-700 transition-colors">
                     <i class="fas fa-chart-pie w-5 h-5 mr-3"></i> Dashboard
                 </button>
                 <div class="section-divider">
                     <p class="text-xs text-slate-400 uppercase tracking-wider mb-2">Sistema</p>
-                    
                 </div>
                 <button onclick="setActiveTab('clientes')"
                     class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
@@ -254,29 +249,27 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
                     <i class="fas fa-shield-alt w-5 h-5 mr-3"></i> Garantías Juridicas
                 </button>
                 <button onclick="setActiveTab('configuracion')"
-                        class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
-                        <i class="fas fa-cogs w-5 h-5 mr-3"></i> Zona, Asesor & Política
-                    </button>
+                    class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                    <i class="fas fa-cogs w-5 h-5 mr-3"></i> Zona, Asesor & Política
+                </button>
                 <button onclick="setActiveTab('creditos_corp')"
                     class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-credit-card w-5 h-5 mr-3"></i> Créditos Jurídicos
                 </button>
-                
-                
+
                 <button onclick="setActiveTab('creditos')"
                     class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-credit-card w-5 h-5 mr-3"></i> Créditos Naturales
                 </button>
 
-                         <!-- AQUÍ AGREGA EL NUEVO BOTÓN PARA COBROS NATURALES -->
-                     <button onclick="loadCobrosNaturalesModule()"
-                      class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
-                     <i class="fas fa-hand-holding-usd w-5 h-5 mr-3 text-green-400"></i> Cobros Naturales
-                     <span class="ml-auto text-xs bg-green-900 text-green-100 px-2 py-1 rounded-full">
-                         
-                     </span>
+                <button onclick="loadCobrosNaturalesModule()"
+                    class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                    <i class="fas fa-hand-holding-usd w-5 h-5 mr-3 text-green-400"></i> Cobros Naturales
+                    <span class="ml-auto text-xs bg-green-900 text-green-100 px-2 py-1 rounded-full">
+
+                    </span>
                 </button>
-                
+
                 <button onclick="setActiveTab('activos')"
                     class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-building w-5 h-5 mr-3"></i> Activos Fijos
