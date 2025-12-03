@@ -20,6 +20,7 @@ try {
 
 $method = $_SERVER['REQUEST_METHOD'];
 
+
 switch ($method) {
     case 'GET':
         // Si hay un ID en la URL, obtener un cliente específico
