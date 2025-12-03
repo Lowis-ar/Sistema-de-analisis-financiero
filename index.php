@@ -236,8 +236,22 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
                 <button onclick="setActiveTab('dashboard')" class="tab-button flex items-center w-full p-3 rounded-md bg-blue-600 hover:bg-slate-700 transition-colors">
                     <i class="fas fa-chart-pie w-5 h-5 mr-3"></i> Dashboard
                 </button>
+                <div class="section-divider">
+    <p class="text-xs text-slate-400 uppercase tracking-wider mb-2">Sistema</p>
+    <button onclick="setActiveTab('configuracion')" class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+        <i class="fas fa-cogs w-5 h-5 mr-3"></i> Configuración
+    </button>
+</div>
                 <button onclick="setActiveTab('clientes')" class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-users w-5 h-5 mr-3"></i> Clientes
+                </button>
+                 <button onclick="setActiveTab('financiero')"
+                    class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                    <i class="fas fa-chart-line w-5 h-5 mr-3"></i> Info. Financiera
+                </button>
+                <button onclick="setActiveTab('creditos_corp')"
+                    class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
+                    <i class="fas fa-credit-card w-5 h-5 mr-3"></i> Créditos Júridicos
                 </button>
                 <button onclick="setActiveTab('garantias')" class="tab-button flex items-center w-full p-3 rounded-md hover:bg-slate-700 transition-colors">
                     <i class="fas fa-shield-alt w-5 h-5 mr-3"></i> Garantías
@@ -301,6 +315,9 @@ $rol_usuario = htmlspecialchars($_SESSION['user_rol'] ?? 'usuario');
     <script src="js/modules/prestamos.js"></script>
     <script src="js/modules/activos.js"></script>
     <script src="js/modules/usuarios.js"></script>
+    <script src="js/modules/financiero.js"></script>
+    <script src="js/modules/creditos_corp.js"></script>
+    <script src="js/modules/configuracion.js"></script>
 
 </body>
 
