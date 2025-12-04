@@ -37,9 +37,7 @@ function renderVistaCobrosNaturales(prestamos) {
                     <button onclick="filtrarVencimientosHoy()" class="btn btn-secondary">
                         <i class="fas fa-calendar-day mr-2"></i>Ver Vencimientos Hoy
                     </button>
-                    <button onclick="exportarReporte()" class="btn btn-outline">
-                        <i class="fas fa-file-export mr-2"></i>Exportar
-                    </button>
+                    
                 </div>
             </div>
 
