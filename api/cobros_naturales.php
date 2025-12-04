@@ -316,10 +316,144 @@ try {
         
         default:
             echo json_encode(['error' => 'Acción no válida']);
+
+
+            // ============================================
+// 6. GENERAR REPORTE DE PAGOS FUTUROS
+// ============================================
+case 'reporte_pagos':
+    $prestamo_id = $_GET['id'] ?? 0;
+    
+    // Obtener datos del préstamo
+    $sql_prestamo = "SELECT 
+        p.*,
+        c.nombre as cliente_nombre,
+        c.dui,
+        c.telefono,
+        c.direccion
+    FROM prestamos p
+    INNER JOIN clientes c ON p.cliente_id = c.id
+    WHERE p.id = ?";
+    
+    $stmt = $pdo->prepare($sql_prestamo);
+    $stmt->execute([$prestamo_id]);
+    $prestamo = $stmt->fetch();
+    
+    if (!$prestamo) {
+        echo json_encode(['error' => 'Préstamo no encontrado']);
+        exit();
     }
+    
+    // Obtener historial de pagos realizados
+    $sql_pagos_realizados = "SELECT 
+        fecha,
+        total_pagado,
+        capital,
+        interes,
+        mora,
+        saldo_restante,
+        DATE_FORMAT(fecha, '%d/%m/%Y') as fecha_formateada
+    FROM pagos 
+    WHERE prestamo_id = ?
+    ORDER BY fecha ASC";
+    
+    $stmt_pagos = $pdo->prepare($sql_pagos_realizados);
+    $stmt_pagos->execute([$prestamo_id]);
+    $pagos_realizados = $stmt_pagos->fetchAll();
+    
+    // Calcular proyección de pagos futuros (método francés simplificado)
+    $saldo_actual = floatval($prestamo['saldo_actual']);
+    $tasa_mensual = floatval($prestamo['tasa']) / 100 / 12;
+    $cuota = floatval($prestamo['cuota']);
+    
+    $pagos_futuros = [];
+    $saldo_simulado = $saldo_actual;
+    $numero_cuota = count($pagos_realizados) + 1;
+    
+    // Si no hay saldo, retornar solo pagos realizados
+    if ($saldo_simulado <= 0) {
+        echo json_encode([
+            'prestamo' => $prestamo,
+            'pagos_realizados' => $pagos_realizados,
+            'pagos_futuros' => [],
+            'resumen' => [
+                'total_pagado' => array_sum(array_column($pagos_realizados, 'total_pagado')),
+                'saldo_actual' => 0,
+                'cuotas_pendientes' => 0
+            ]
+        ]);
+        break;
+    }
+    
+    // Calcular cuántas cuotas faltan
+    $cuotas_faltantes = ceil($saldo_simulado / $cuota);
+    
+    // Generar fechas futuras (empezando desde hoy o desde última fecha de pago)
+    $fecha_base = $prestamo['ultimo_pago'] ? 
+                 new DateTime($prestamo['ultimo_pago']) : 
+                 new DateTime($prestamo['fecha_otorgamiento']);
+    
+    for ($i = 1; $i <= $cuotas_faltantes && $saldo_simulado > 0; $i++) {
+        // Calcular fecha de vencimiento (cada 30 días)
+        $fecha_vencimiento = clone $fecha_base;
+        $fecha_vencimiento->modify("+" . ($i * 30) . " days");
+        
+        // Calcular interés de este período
+        $interes_periodo = $saldo_simulado * $tasa_mensual;
+        
+        // Calcular capital de esta cuota
+        $capital_periodo = min($cuota - $interes_periodo, $saldo_simulado);
+        
+        // Ajustar si es la última cuota
+        if ($saldo_simulado - $capital_periodo < 0.01) {
+            $capital_periodo = $saldo_simulado;
+        }
+        
+        // Calcular nuevo saldo
+        $nuevo_saldo = $saldo_simulado - $capital_periodo;
+        
+        $pagos_futuros[] = [
+            'numero_cuota' => $numero_cuota + $i - 1,
+            'fecha_vencimiento' => $fecha_vencimiento->format('Y-m-d'),
+            'fecha_formateada' => $fecha_vencimiento->format('d/m/Y'),
+            'capital' => round($capital_periodo, 2),
+            'interes' => round($interes_periodo, 2),
+            'cuota_total' => round($capital_periodo + $interes_periodo, 2),
+            'saldo_despues' => round($nuevo_saldo, 2),
+            'estado' => 'pendiente'
+        ];
+        
+        $saldo_simulado = $nuevo_saldo;
+    }
+    
+    // Calcular resumen
+    $total_interes_futuro = array_sum(array_column($pagos_futuros, 'interes'));
+    $total_capital_futuro = array_sum(array_column($pagos_futuros, 'capital'));
+    
+    echo json_encode([
+        'prestamo' => $prestamo,
+        'pagos_realizados' => $pagos_realizados,
+        'pagos_futuros' => $pagos_futuros,
+        'resumen' => [
+            'total_pagado' => array_sum(array_column($pagos_realizados, 'total_pagado')),
+            'total_capital_pagado' => array_sum(array_column($pagos_realizados, 'capital')),
+            'total_interes_pagado' => array_sum(array_column($pagos_realizados, 'interes')),
+            'total_mora_pagada' => array_sum(array_column($pagos_realizados, 'mora')),
+            'saldo_actual' => $prestamo['saldo_actual'],
+            'cuotas_pendientes' => count($pagos_futuros),
+            'total_a_pagar_futuro' => $total_capital_futuro + $total_interes_futuro,
+            'total_interes_futuro' => $total_interes_futuro
+        ]
+    ]);
+    break;
+    }
+
+    
     
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => $e->getMessage()]);
 }
+
+
 ?>

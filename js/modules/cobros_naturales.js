@@ -518,5 +518,359 @@ function showInfo(message) {
     alert('Info: ' + message);
 }
 
+// ============================================
+// FUNCIONES PARA REPORTE DE PAGOS
+// ============================================
+
+async function verReportePagos(prestamoId) {
+    showLoading();
+    
+    try {
+        const data = await apiCall(`cobros_naturales.php?action=reporte_pagos&id=${prestamoId}`);
+        
+        if (data.error) {
+            showError(data.error);
+            return;
+        }
+        
+        renderReportePagos(data);
+    } catch (e) {
+        console.error('Error:', e);
+        showError('Error al generar el reporte');
+    }
+}
+
+function renderReportePagos(data) {
+    const { prestamo, pagos_realizados, pagos_futuros, resumen } = data;
+    const hoy = new Date().toISOString().split('T')[0];
+    
+    const html = `
+        <div class="max-w-6xl mx-auto">
+            <div class="card">
+                <!-- Header del reporte -->
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 border-b pb-4">
+                    <div>
+                        <h2 class="text-2xl font-bold text-gray-800">
+                            <i class="fas fa-file-invoice-dollar mr-2"></i>Reporte de Pagos
+                        </h2>
+                        <div class="text-sm text-gray-600 mt-1">
+                            <span class="font-semibold">Cliente:</span> ${prestamo.cliente_nombre} | 
+                            <span class="font-semibold">Préstamo:</span> ${prestamo.codigo_contrato || 'P-' + prestamo.id}
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mt-4 md:mt-0">
+                        <button onclick="imprimirReporte()" class="btn btn-secondary">
+                            <i class="fas fa-print mr-2"></i>Imprimir
+                        </button>
+                        <button onclick="loadCobrosNaturales()" class="btn btn-outline">
+                            <i class="fas fa-arrow-left mr-2"></i>Volver
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Resumen del crédito -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <div class="text-center">
+                        <div class="text-sm text-blue-600 font-bold">Monto Original</div>
+                        <div class="text-2xl font-bold text-blue-800">${formatCurrency(prestamo.monto)}</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-sm text-green-600 font-bold">Saldo Actual</div>
+                        <div class="text-2xl font-bold ${resumen.saldo_actual > 0 ? 'text-green-700' : 'text-green-500'}">
+                            ${formatCurrency(resumen.saldo_actual)}
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-sm text-purple-600 font-bold">Cuota Mensual</div>
+                        <div class="text-2xl font-bold text-purple-700">${formatCurrency(prestamo.cuota)}</div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-sm text-orange-600 font-bold">Cuotas Pendientes</div>
+                        <div class="text-2xl font-bold text-orange-700">${resumen.cuotas_pendientes}</div>
+                    </div>
+                </div>
+                
+                <!-- Resumen financiero -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                    <div class="card bg-green-50 border-green-200">
+                        <h4 class="text-sm font-bold text-green-700 mb-2">TOTAL PAGADO</h4>
+                        <div class="text-2xl font-bold text-green-800">${formatCurrency(resumen.total_pagado)}</div>
+                        <div class="text-xs text-green-600 mt-1">
+                            Capital: ${formatCurrency(resumen.total_capital_pagado)} | 
+                            Interés: ${formatCurrency(resumen.total_interes_pagado)}
+                        </div>
+                    </div>
+                    <div class="card bg-blue-50 border-blue-200">
+                        <h4 class="text-sm font-bold text-blue-700 mb-2">POR PAGAR</h4>
+                        <div class="text-2xl font-bold text-blue-800">${formatCurrency(resumen.total_a_pagar_futuro)}</div>
+                        <div class="text-xs text-blue-600 mt-1">
+                            Capital: ${formatCurrency(resumen.saldo_actual)} | 
+                            Interés: ${formatCurrency(resumen.total_interes_futuro)}
+                        </div>
+                    </div>
+                    <div class="card bg-purple-50 border-purple-200">
+                        <h4 class="text-sm font-bold text-purple-700 mb-2">TOTAL CRÉDITO</h4>
+                        <div class="text-2xl font-bold text-purple-800">
+                            ${formatCurrency(resumen.total_pagado + resumen.total_a_pagar_futuro)}
+                        </div>
+                        <div class="text-xs text-purple-600 mt-1">
+                            Interés total: ${formatCurrency(resumen.total_interes_pagado + resumen.total_interes_futuro)}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tabla de pagos futuros -->
+                <div class="mb-8">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">
+                        <i class="fas fa-calendar-alt mr-2"></i>Pagos Futuros (Proyección)
+                    </h3>
+                    
+                    ${pagos_futuros.length > 0 ? `
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="p-3 text-center"># Cuota</th>
+                                        <th class="p-3 text-center">Fecha Vencimiento</th>
+                                        <th class="p-3 text-right">Capital</th>
+                                        <th class="p-3 text-right">Interés</th>
+                                        <th class="p-3 text-right">Cuota Total</th>
+                                        <th class="p-3 text-right">Saldo Después</th>
+                                        <th class="p-3 text-center">Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${pagos_futuros.map((cuota, index) => {
+                                        const esProxima = cuota.fecha_vencimiento === hoy;
+                                        const esVencida = cuota.fecha_vencimiento < hoy;
+                                        
+                                        return `
+                                        <tr class="border-b hover:bg-gray-50 ${esProxima ? 'bg-yellow-50' : ''} ${esVencida ? 'bg-red-50' : ''}">
+                                            <td class="p-3 text-center font-mono font-bold">${cuota.numero_cuota}</td>
+                                            <td class="p-3 text-center ${esProxima ? 'font-bold text-red-600' : ''}">
+                                                ${cuota.fecha_formateada}
+                                                ${esProxima ? '<span class="ml-2 text-xs bg-red-100 text-red-700 px-2 py-1 rounded">HOY</span>' : ''}
+                                            </td>
+                                            <td class="p-3 text-right text-green-700">${formatCurrency(cuota.capital)}</td>
+                                            <td class="p-3 text-right text-blue-700">${formatCurrency(cuota.interes)}</td>
+                                            <td class="p-3 text-right font-bold">${formatCurrency(cuota.cuota_total)}</td>
+                                            <td class="p-3 text-right text-gray-600">${formatCurrency(cuota.saldo_despues)}</td>
+                                            <td class="p-3 text-center">
+                                                ${renderEstadoCuota(cuota.estado, cuota.fecha_vencimiento)}
+                                            </td>
+                                        </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : `
+                        <div class="text-center py-8 bg-gray-50 rounded-lg">
+                            <i class="fas fa-check-circle text-4xl text-green-400 mb-3"></i>
+                            <p class="text-gray-600">¡Crédito completamente pagado!</p>
+                        </div>
+                    `}
+                </div>
+                
+                <!-- Historial de pagos realizados -->
+                <div class="mb-8">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">
+                        <i class="fas fa-history mr-2"></i>Historial de Pagos Realizados
+                    </h3>
+                    
+                    ${pagos_realizados.length > 0 ? `
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-100">
+                                    <tr>
+                                        <th class="p-3">Fecha Pago</th>
+                                        <th class="p-3 text-right">Total</th>
+                                        <th class="p-3 text-right">Capital</th>
+                                        <th class="p-3 text-right">Interés</th>
+                                        <th class="p-3 text-right">Mora</th>
+                                        <th class="p-3 text-right">Saldo Restante</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${pagos_realizados.map(pago => `
+                                        <tr class="border-b hover:bg-gray-50">
+                                            <td class="p-3">${pago.fecha_formateada}</td>
+                                            <td class="p-3 text-right font-bold">${formatCurrency(pago.total_pagado)}</td>
+                                            <td class="p-3 text-right text-green-600">${formatCurrency(pago.capital)}</td>
+                                            <td class="p-3 text-right text-blue-600">${formatCurrency(pago.interes)}</td>
+                                            <td class="p-3 text-right ${pago.mora > 0 ? 'text-red-600' : 'text-gray-400'}">
+                                                ${formatCurrency(pago.mora)}
+                                            </td>
+                                            <td class="p-3 text-right font-mono">${formatCurrency(pago.saldo_restante)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : `
+                        <div class="text-center py-8 bg-gray-50 rounded-lg">
+                            <i class="fas fa-clock text-4xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-600">No hay pagos registrados aún</p>
+                        </div>
+                    `}
+                </div>
+                
+                <!-- Información del préstamo -->
+                <div class="bg-gray-50 p-4 rounded-lg border">
+                    <h4 class="text-sm font-bold text-gray-700 mb-3">Detalles del Préstamo</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                            <span class="text-gray-500">Tasa de interés:</span>
+                            <span class="font-bold ml-2">${prestamo.tasa}% anual</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Plazo original:</span>
+                            <span class="font-bold ml-2">${prestamo.plazo} meses</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Fecha otorgamiento:</span>
+                            <span class="font-bold ml-2">${formatDate(prestamo.fecha_otorgamiento)}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-500">Último pago:</span>
+                            <span class="font-bold ml-2">${prestamo.ultimo_pago ? formatDate(prestamo.ultimo_pago) : 'Nunca'}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Botones de acción -->
+                <div class="mt-8 pt-6 border-t flex justify-between">
+                    <div>
+                        <span class="text-sm text-gray-500">Generado el: ${new Date().toLocaleDateString('es-SV')}</span>
+                    </div>
+                    <div class="flex gap-2">
+                        ${resumen.saldo_actual > 0 ? `
+                            <button onclick="registrarPagoNatural(${prestamo.id})" class="btn btn-success">
+                                <i class="fas fa-hand-holding-usd mr-2"></i>Registrar Pago
+                            </button>
+                        ` : ''}
+                        <button onclick="exportarReportePDF(${prestamo.id})" class="btn btn-primary">
+                            <i class="fas fa-download mr-2"></i>Exportar PDF
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('main-content').innerHTML = html;
+}
+
+function renderEstadoCuota(estado, fechaVencimiento) {
+    const hoy = new Date().toISOString().split('T')[0];
+    
+    if (fechaVencimiento < hoy) {
+        return `<span class="px-2 py-1 rounded text-xs font-bold bg-red-100 text-red-800">
+            <i class="fas fa-exclamation-triangle mr-1"></i>VENCIDA
+        </span>`;
+    }
+    
+    if (fechaVencimiento === hoy) {
+        return `<span class="px-2 py-1 rounded text-xs font-bold bg-yellow-100 text-yellow-800">
+            <i class="fas fa-clock mr-1"></i>HOY
+        </span>`;
+    }
+    
+    return `<span class="px-2 py-1 rounded text-xs font-bold bg-green-100 text-green-800">
+        <i class="fas fa-clock mr-1"></i>PENDIENTE
+    </span>`;
+}
+
+function imprimirReporte() {
+    window.print();
+}
+
+async function exportarReportePDF(prestamoId) {
+    // Esta función puede integrarse con una librería como jsPDF o generar PDF en el servidor
+    showInfo('Funcionalidad de exportación a PDF en desarrollo');
+    // Por ahora, solo imprimir
+    window.print();
+}
+
+// ============================================
+// MODIFICACIÓN EN LA RENDERIZACIÓN DE FILAS
+// ============================================
+
+// En la función renderFilaPrestamo(), modifica las acciones para agregar el botón de reporte:
+// Reemplaza esta parte:
+/*
+<td class="p-3 text-center">
+    <div class="flex justify-center space-x-2">
+        <button onclick="registrarPagoNatural(${p.id})" 
+                class="btn btn-success btn-sm">
+            <i class="fas fa-hand-holding-usd mr-1"></i>Cobrar
+        </button>
+        <button onclick="verHistorial(${p.id})" 
+                class="btn btn-outline btn-sm">
+            <i class="fas fa-history mr-1"></i>Historial
+        </button>
+    </div>
+</td>
+*/
+
+// Por esto:
+function renderFilaPrestamo(p, hoy) {
+    const venceHoy = p.proximo_vencimiento === hoy;
+    const estaEnMora = p.estado === 'mora';
+    
+    return `
+        <tr class="hover:bg-gray-50 ${venceHoy ? 'bg-yellow-50' : ''} ${estaEnMora ? 'bg-red-50' : ''}">
+            <td class="p-3">
+                <div class="font-bold text-gray-800">${p.cliente_nombre}</div>
+                <div class="text-xs text-gray-500">${p.dui || 'Sin DUI'} | ${p.telefono || 'Sin teléfono'}</div>
+            </td>
+            <td class="p-3">
+                <div class="font-mono text-sm font-bold">${p.codigo_contrato || 'P-' + p.id}</div>
+                <div class="text-xs text-gray-500">
+                    ${formatCurrency(p.monto)} / ${p.plazo}m @ ${p.tasa}%
+                </div>
+            </td>
+            <td class="p-3 text-right">
+                <div class="font-bold text-lg ${p.saldo_actual > 0 ? 'text-blue-700' : 'text-green-600'}">
+                    ${formatCurrency(p.saldo_actual)}
+                </div>
+                <div class="text-xs text-gray-500">Cuota: ${formatCurrency(p.cuota)}</div>
+            </td>
+            <td class="p-3 text-center">
+                ${renderBadgeEstado(p.estado, p.dias_mora)}
+            </td>
+            <td class="p-3 text-center ${venceHoy ? 'font-bold text-red-600 animate-pulse' : ''}">
+                ${p.proximo_vencimiento ? formatDate(p.proximo_vencimiento) : 'N/A'}
+                ${venceHoy ? '<br><span class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">HOY</span>' : ''}
+            </td>
+            <td class="p-3 text-center">
+                ${p.dias_mora > 0 ? 
+                    `<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700">
+                        <i class="fas fa-exclamation-triangle mr-1"></i>${p.dias_mora}
+                    </span>` : 
+                    '<span class="text-green-600">-</span>'
+                }
+            </td>
+            <td class="p-3 text-center">
+                <div class="flex justify-center space-x-2">
+                    <button onclick="registrarPagoNatural(${p.id})" 
+                            class="btn btn-success btn-sm">
+                        <i class="fas fa-hand-holding-usd mr-1"></i>Cobrar
+                    </button>
+                    <button onclick="verReportePagos(${p.id})" 
+                            class="btn btn-primary btn-sm">
+                        <i class="fas fa-file-alt mr-1"></i>Reporte
+                    </button>
+                    <button onclick="verHistorial(${p.id})" 
+                            class="btn btn-outline btn-sm">
+                        <i class="fas fa-history mr-1"></i>Historial
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
 // Inicializar el módulo cuando se cargue
 loadCobrosNaturales();
+
